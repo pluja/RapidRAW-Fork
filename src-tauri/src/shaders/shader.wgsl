@@ -364,8 +364,15 @@ fn hash(p: vec2<f32>) -> f32 {
 /// The gradient noise this replaces evaluated to exactly zero at every integer
 /// coordinate, which left a regular grid of grain-free pixels across the frame.
 /// Interpolating values rather than gradients has no such structure.
-/// Scales the slider so its range lands where the previous grain did.
-const GRAIN_STRENGTH: f32 = 0.5;
+/// Grain at the top of the slider, past any emulsion.
+///
+/// Kodak's diffuse RMS granularity runs from about four on the finest colour
+/// stock to eleven on the coarsest, under three to one. A slider reaching far
+/// past that spent most of its travel on grain no film has ever produced. The
+/// response is shaped so the coarsest realistic stock lands near seventy,
+/// leaving the rest for going deliberately beyond film.
+const GRAIN_MAX_AMPLITUDE: f32 = 0.10;
+const GRAIN_RESPONSE: f32 = 1.32;
 
 /// Finest grain cell worth rendering, in pixels of whatever is being drawn.
 ///
@@ -2273,7 +2280,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
     if (adjustments.global.grain_amount > 0.0) {
         let coord = vec2<f32>(absolute_coord_i);
-        let amount = adjustments.global.grain_amount * GRAIN_STRENGTH;
+        let requested = clamp(adjustments.global.grain_amount * 2.0, 0.0, 1.0);
+        let amount = pow(requested, GRAIN_RESPONSE) * GRAIN_MAX_AMPLITUDE;
         let grain_frequency = min(
             (1.0 / max(adjustments.global.grain_size, 0.1)) / scale,
             1.0 / GRAIN_MIN_CELL_PX

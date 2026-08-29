@@ -17,6 +17,15 @@ pub const LAYER_INDEPENDENCE: f32 = 0.30;
 /// Finest grain cell worth rendering, in pixels of whatever is being drawn.
 pub const MIN_CELL_PX: f32 = 1.6;
 
+/// Grain at the top of the slider, past any emulsion, and the curve reaching it.
+pub const MAX_AMPLITUDE: f32 = 0.10;
+pub const RESPONSE: f32 = 1.32;
+
+/// Grain amplitude for a slider position from zero to one hundred.
+pub fn amplitude(slider: f32) -> f32 {
+    (slider / 100.0).clamp(0.0, 1.0).powf(RESPONSE) * MAX_AMPLITUDE
+}
+
 fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
     let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
@@ -161,6 +170,39 @@ mod tests {
                 spread(d) < spread(d + 0.01),
                 "spread fell approaching mid grey"
             );
+        }
+    }
+
+    /// Real emulsions span under three to one from the finest colour stock to
+    /// the coarsest, so the slider should spend its middle on that range rather
+    /// than racing past it in the first quarter.
+    #[test]
+    fn the_amount_slider_spends_its_middle_on_film() {
+        assert!(amplitude(0.0) < 1e-6, "zero should mean no grain");
+        assert!(
+            (amplitude(100.0) - MAX_AMPLITUDE).abs() < 1e-6,
+            "the top should reach the stated maximum"
+        );
+
+        // The band where real stocks live carries a film-like spread.
+        let film_range = amplitude(70.0) / amplitude(40.0);
+        assert!(
+            (1.7..2.6).contains(&film_range),
+            "forty to seventy spanned {film_range}x, film spans under three"
+        );
+
+        // Past the coarsest stock there is still somewhere to go.
+        assert!(
+            amplitude(100.0) > amplitude(70.0) * 1.4,
+            "the creative end gave nothing beyond film"
+        );
+
+        // Monotonic, or the slider would fold back on itself.
+        let mut previous = -1.0f32;
+        for step in 0..=100 {
+            let current = amplitude(step as f32);
+            assert!(current > previous, "amplitude fell at {step}");
+            previous = current;
         }
     }
 
