@@ -11,12 +11,21 @@
 use crate::color_space::{self, Mat3};
 
 /// Mireds per unit of slider travel, so the full -100..100 range spans roughly
-/// 2000 K to 30000 K from a daylight starting point.
+/// 2900 K to 20000 K from the working space white.
 pub const MIREDS_PER_STEP: f32 = 1.5;
+
+/// Divisors the adjustment plumbing applies before values reach the shader, so
+/// the shader's own constants are these multiples of the per-slider ones.
+pub const TEMPERATURE_SCALE: f32 = 25.0;
+pub const TINT_SCALE: f32 = 100.0;
+
+/// Temperature of the working space white, which is where the shot's own
+/// neutral was pinned during develop and so where the sliders move from.
+pub const ORIGIN_CCT: f32 = 5003.0;
 
 /// Slider units of tint per 0.01 of CIE 1960 v, the axis perpendicular to the
 /// locus along which green and magenta lie.
-pub const TINT_V_PER_STEP: f32 = 0.0004;
+pub const TINT_V_PER_STEP: f32 = 0.0003;
 
 pub fn xyz_from_xy(x: f32, y: f32) -> [f32; 3] {
     if y.abs() < 1e-6 {
@@ -287,6 +296,118 @@ mod tests {
             (2600.0..3100.0).contains(&cct),
             "incandescent recovered as {cct} K, expected near StdA at 2856 K"
         );
+    }
+
+    const BRADFORD: Mat3 = [
+        [0.8951, 0.2664, -0.1614],
+        [-0.7502, 1.7135, 0.0367],
+        [0.0389, -0.0685, 1.0296],
+    ];
+
+    /// Reproduces exactly what apply_white_balance does in shader.wgsl, so the
+    /// two implementations cannot drift apart unnoticed. Takes slider units and
+    /// scales them the way the adjustment plumbing does.
+    fn shader_white_balance(color: [f32; 3], slider_temp: f32, slider_tint: f32) -> [f32; 3] {
+        let temp = slider_temp / TEMPERATURE_SCALE;
+        let tint = slider_tint / TINT_SCALE;
+
+        let (ox, oy) = xy_from_cct(ORIGIN_CCT);
+        let target_mireds =
+            (1.0e6 / ORIGIN_CCT - temp * SHADER_MIREDS_PER_STEP).clamp(20.0, 1000.0);
+        let (tx, ty) = xy_from_cct(1.0e6 / target_mireds);
+        let (tu, tv) = uv_from_xy(tx, ty);
+        let (fx, fy) = xy_from_uv(tu, tv + tint * SHADER_TINT_V_PER_STEP);
+
+        let origin_cone = color_space::apply(&BRADFORD, xyz_from_xy(ox, oy));
+        let target_cone = color_space::apply(&BRADFORD, xyz_from_xy(fx, fy));
+
+        let pp_to_cone = color_space::multiply(&BRADFORD, &color_space::PROPHOTO_TO_XYZ_D50);
+        let cone_to_pp = color_space::multiply(
+            &color_space::invert(&color_space::PROPHOTO_TO_XYZ_D50).unwrap(),
+            &color_space::invert(&BRADFORD).unwrap(),
+        );
+
+        let cone = color_space::apply(&pp_to_cone, color);
+        let scaled = [
+            cone[0] * origin_cone[0] / target_cone[0],
+            cone[1] * origin_cone[1] / target_cone[1],
+            cone[2] * origin_cone[2] / target_cone[2],
+        ];
+        color_space::apply(&cone_to_pp, scaled)
+    }
+
+    #[test]
+    fn shader_algorithm_is_identity_at_zero() {
+        let grey = [0.42, 0.42, 0.42];
+        let out = shader_white_balance(grey, 0.0, 0.0);
+        for i in 0..3 {
+            assert!(
+                (out[i] - grey[i]).abs() < 1e-5,
+                "channel {i} moved from {} to {} with both sliders at zero",
+                grey[i],
+                out[i]
+            );
+        }
+    }
+
+    #[test]
+    fn shader_algorithm_matches_slider_directions() {
+        let grey = [0.5, 0.5, 0.5];
+        let warm = shader_white_balance(grey, 40.0, 0.0);
+        let cool = shader_white_balance(grey, -40.0, 0.0);
+        assert!(
+            warm[0] / warm[2] > 1.0 && cool[0] / cool[2] < 1.0,
+            "temperature direction wrong: warm {warm:?}, cool {cool:?}"
+        );
+
+        let magenta = shader_white_balance(grey, 0.0, 40.0);
+        assert!(
+            (magenta[0] + magenta[2]) * 0.5 > magenta[1],
+            "tint direction wrong: {magenta:?}"
+        );
+    }
+
+    const SHADER_MIREDS_PER_STEP: f32 = 37.5;
+    const SHADER_TINT_V_PER_STEP: f32 = 0.03;
+
+    /// The plumbing divides slider values before the shader sees them, so the
+    /// shader's constants have to carry that factor.
+    #[test]
+    fn shader_step_constants_absorb_the_plumbing_scale() {
+        assert!((SHADER_MIREDS_PER_STEP - MIREDS_PER_STEP * TEMPERATURE_SCALE).abs() < 1e-4);
+        assert!((SHADER_TINT_V_PER_STEP - TINT_V_PER_STEP * TINT_SCALE).abs() < 1e-6);
+    }
+
+    #[test]
+    fn full_slider_travel_spans_a_useful_range() {
+        let origin_mireds = 1.0e6 / ORIGIN_CCT;
+        let warm = 1.0e6 / (origin_mireds - 100.0 * MIREDS_PER_STEP);
+        let cool = 1.0e6 / (origin_mireds + 100.0 * MIREDS_PER_STEP);
+        assert!(
+            warm > 15000.0 && (2500.0..3500.0).contains(&cool),
+            "full travel reached {cool} K to {warm} K"
+        );
+    }
+
+    /// The shader carries these as literals; drift would change every image.
+    #[test]
+    fn shader_cone_matrices_match() {
+        const SHADER_PP_TO_CONE: Mat3 = [
+            [0.7907327, 0.3106534, -0.1051016],
+            [-0.1048588, 1.1183755, 0.0069107],
+            [0.0112988, -0.0435044, 0.8508500],
+        ];
+        let computed = color_space::multiply(&BRADFORD, &color_space::PROPHOTO_TO_XYZ_D50);
+        for r in 0..3 {
+            for c in 0..3 {
+                assert!(
+                    (computed[r][c] - SHADER_PP_TO_CONE[r][c]).abs() < 1e-6,
+                    "PP_TO_CONE[{r}][{c}]: {} vs shader {}",
+                    computed[r][c],
+                    SHADER_PP_TO_CONE[r][c]
+                );
+            }
+        }
     }
 
     #[test]

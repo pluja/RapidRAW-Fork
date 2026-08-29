@@ -226,6 +226,32 @@ const SRGB_TO_PROPHOTO_R0 = vec3<f32>(0.5293459, 0.3300728, 0.1405812);
 const SRGB_TO_PROPHOTO_R1 = vec3<f32>(0.0983743, 0.8734611, 0.0281647);
 const SRGB_TO_PROPHOTO_R2 = vec3<f32>(0.0168832, 0.1176725, 0.8654441);
 
+/// Correlated colour temperature of the working space white, which is the
+/// illuminant the shot's own neutral was pinned to during develop.
+const WB_ORIGIN_CCT: f32 = 5003.0;
+/// Mireds per unit of travel. Reciprocal temperature rather than kelvin, so a
+/// step feels the same at both ends of the range. These absorb the divisors the
+/// adjustment plumbing applies, so they are the per-slider values times the
+/// scales in white_balance.rs, which asserts the relationship.
+const WB_MIREDS_PER_STEP: f32 = 37.5;
+const WB_TINT_V_PER_STEP: f32 = 0.03;
+
+const PP_TO_CONE = mat3x3<f32>(
+    vec3<f32>(0.7907327, -0.1048588, 0.0112988),
+    vec3<f32>(0.3106534, 1.1183755, -0.0435044),
+    vec3<f32>(-0.1051016, 0.0069107, 0.8508500),
+);
+const CONE_TO_PP = mat3x3<f32>(
+    vec3<f32>(1.2183720, 0.1142984, -0.0103351),
+    vec3<f32>(-0.3324701, 0.8626819, 0.0485244),
+    vec3<f32>(0.1532003, 0.0071119, 1.1736245),
+);
+const BRADFORD = mat3x3<f32>(
+    vec3<f32>(0.8951000, -0.7502000, 0.0389000),
+    vec3<f32>(0.2664000, 1.7135000, -0.0685000),
+    vec3<f32>(-0.1614000, 0.0367000, 1.0296000),
+);
+
 fn get_luma(c: vec3<f32>) -> f32 {
     return dot(c, LUMA_COEFF);
 }
@@ -651,12 +677,89 @@ fn apply_color_calibration(color: vec3<f32>, cal: ColorCalibrationSettings) -> v
     return c;
 }
 
+/// Chromaticity of the illuminant at a temperature, on the Planckian locus
+/// below 4000 K where real sources are incandescent and the CIE daylight locus
+/// above it, following the DNG convention.
+fn wb_xy_from_cct(cct: f32) -> vec2<f32> {
+    let t = clamp(cct, 1000.0, 50000.0);
+    let inv = 1.0e3 / t;
+    let inv2 = inv * inv;
+    let inv3 = inv2 * inv;
+
+    var x: f32;
+    var y: f32;
+    if (t < 4000.0) {
+        if (t <= 2222.0) {
+            x = -0.2661239 * inv3 - 0.2343589 * inv2 + 0.8776956 * inv + 0.179910;
+            y = -1.1063814 * x * x * x - 1.34811020 * x * x + 2.18555832 * x - 0.20219683;
+        } else {
+            x = -3.0258469 * inv3 + 2.1070379 * inv2 + 0.2226347 * inv + 0.240390;
+            y = -0.9549476 * x * x * x - 1.37418593 * x * x + 2.09137015 * x - 0.16748867;
+        }
+    } else {
+        if (t <= 7000.0) {
+            x = -4.6070 * inv3 + 2.9678 * inv2 + 0.09911 * inv + 0.244063;
+        } else {
+            x = -2.0064 * inv3 + 1.9018 * inv2 + 0.24748 * inv + 0.237040;
+        }
+        y = -3.000 * x * x + 2.870 * x - 0.275;
+    }
+    return vec2<f32>(x, y);
+}
+
+fn wb_uv_from_xy(xy: vec2<f32>) -> vec2<f32> {
+    let d = -2.0 * xy.x + 12.0 * xy.y + 3.0;
+    if (abs(d) < 1e-9) {
+        return vec2<f32>(0.0, 0.0);
+    }
+    return vec2<f32>(4.0 * xy.x / d, 6.0 * xy.y / d);
+}
+
+fn wb_xy_from_uv(uv: vec2<f32>) -> vec2<f32> {
+    let d = 2.0 * uv.x - 8.0 * uv.y + 4.0;
+    if (abs(d) < 1e-9) {
+        return vec2<f32>(0.3127, 0.3290);
+    }
+    return vec2<f32>(3.0 * uv.x / d, 2.0 * uv.y / d);
+}
+
+fn wb_xyz_from_xy(xy: vec2<f32>) -> vec3<f32> {
+    if (abs(xy.y) < 1e-6) {
+        return vec3<f32>(0.0, 0.0, 0.0);
+    }
+    return vec3<f32>(xy.x / xy.y, 1.0, (1.0 - xy.x - xy.y) / xy.y);
+}
+
+/// White balance as a chromatic adaptation rather than a channel scale.
+///
+/// The working space pins the shot's own neutral to its white, so that white is
+/// the origin the sliders move from. Both origin and target run through the same
+/// locus approximation, which makes zero exactly identity rather than nearly so.
+///
+/// Both axes invert: the target illuminant is divided out, so a cooler target is
+/// what leaves the image warmer, and a greener one what leaves it magenta.
 fn apply_white_balance(color: vec3<f32>, temp: f32, tnt: f32) -> vec3<f32> {
-    var rgb = color;
-    let temp_kelvin_mult = vec3<f32>(1.0 + temp * 0.2, 1.0 + temp * 0.05, 1.0 - temp * 0.2);
-    let tint_mult = vec3<f32>(1.0 + tnt * 0.25, 1.0 - tnt * 0.25, 1.0 + tnt * 0.25);
-    rgb *= temp_kelvin_mult * tint_mult;
-    return rgb;
+    if (abs(temp) < 0.0005 && abs(tnt) < 0.0005) {
+        return color;
+    }
+
+    let origin_xy = wb_xy_from_cct(WB_ORIGIN_CCT);
+
+    let target_mireds = clamp(
+        1.0e6 / WB_ORIGIN_CCT - temp * WB_MIREDS_PER_STEP,
+        20.0,
+        1000.0
+    );
+    let target_uv = wb_uv_from_xy(wb_xy_from_cct(1.0e6 / target_mireds));
+    let tinted_xy = wb_xy_from_uv(vec2<f32>(
+        target_uv.x,
+        target_uv.y + tnt * WB_TINT_V_PER_STEP
+    ));
+
+    let origin_cone = BRADFORD * wb_xyz_from_xy(origin_xy);
+    let target_cone = BRADFORD * wb_xyz_from_xy(tinted_xy);
+
+    return CONE_TO_PP * ((PP_TO_CONE * color) * (origin_cone / target_cone));
 }
 
 fn apply_creative_color(color: vec3<f32>, sat: f32, vib: f32) -> vec3<f32> {
