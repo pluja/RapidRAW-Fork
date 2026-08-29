@@ -998,6 +998,9 @@ fn apply_color_grading(color: vec3<f32>, shadows: ColorGradeSettings, midtones: 
     return graded_color;
 }
 
+/// How many stops of local ratio still count as detail rather than an edge.
+const CLARITY_DETAIL_STOPS: f32 = 2.0;
+
 fn apply_local_contrast(
     processed_color_linear: vec3<f32>,
     blurred_color_input_space: vec3<f32>,
@@ -1040,7 +1043,14 @@ fn apply_local_contrast(
     let safe_center_luma = max(center_luma, 0.0001);
     let safe_blurred_luma = max(blurred_luma, 0.0001);
 
-    let log_ratio = log2(safe_center_luma / safe_blurred_luma);
+    // Beyond a couple of stops the ratio is no longer local detail but a hard
+    // edge, or a bright specularity sitting on near black, where the divisor
+    // approaches its floor. Unbounded it reached a gain of 144 there.
+    let log_ratio = clamp(
+        log2(safe_center_luma / safe_blurred_luma),
+        -CLARITY_DETAIL_STOPS,
+        CLARITY_DETAIL_STOPS
+    );
     var effective_amount = amount;
 
     if (mode == 0u) {
@@ -1482,7 +1492,14 @@ fn apply_noise_reduction(
         let luma_tol = mix(0.12, 0.04, c_curve);
         let luma_n   = -1.0 / max(2.0 * luma_tol * luma_tol, 1e-6);
 
-        let chroma_tol = mix(0.20, 0.08, c_curve);
+        // Chroma is measured as the colour minus its own luminance, and the
+        // working space is wider than the one these figures were set in, so the
+        // same colour sits closer to neutral and reads as a smaller difference.
+        // Across all perturbation directions that shrink runs from 1.14 to
+        // 2.37, median 1.40; one scalar cannot match every direction, and the
+        // median is the honest choice. Left unscaled the filter reached that
+        // much further and smoothed across colour edges it used to keep.
+        let chroma_tol = mix(0.143, 0.057, c_curve);
         let chroma_n   = -1.0 / max(2.0 * chroma_tol * chroma_tol, 1e-6);
 
         let jh1 = hash(vec2<f32>(coords_i) + vec2<f32>(43.7, 91.1));

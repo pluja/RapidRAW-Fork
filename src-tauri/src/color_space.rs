@@ -376,6 +376,118 @@ mod tests {
 
     /// The shader carries these rows as literals; drift between the two would
     /// silently change every rendered image.
+    /// Chroma read as colour minus luminance shrinks when the working space
+    /// widens, because a real colour sits nearer the neutral axis. Any filter
+    /// gating on a fixed chroma difference has to be rescaled by the same
+    /// amount or it reaches further than it was set to.
+    #[test]
+    fn chroma_differences_shrink_by_the_factor_the_shader_divides_by() {
+        const SHADER_CHROMA_TOL: (f32, f32) = (0.143, 0.057);
+        const ORIGINAL_CHROMA_TOL: (f32, f32) = (0.20, 0.08);
+        const PROPHOTO_LUMA_W: [f32; 3] = [0.2880402, 0.7118741, 0.0000857];
+        const SRGB_LUMA_W: [f32; 3] = [0.2126, 0.7152, 0.0722];
+
+        fn chroma(c: [f32; 3], w: [f32; 3]) -> f32 {
+            let y = c[0] * w[0] + c[1] * w[1] + c[2] * w[2];
+            ((c[0] - y).powi(2) + (c[2] - y).powi(2)).sqrt()
+        }
+
+        let srgb_to_prophoto = invert(&prophoto_to_srgb()).unwrap();
+        let mut ratios = Vec::new();
+        for i in 0..720 {
+            let angle = i as f32 * std::f32::consts::TAU / 720.0;
+            for axis in 0..3 {
+                let mut direction = [0.0f32; 3];
+                direction[axis] = angle.cos();
+                direction[(axis + 1) % 3] = angle.sin();
+                let wide = chroma(apply(&srgb_to_prophoto, direction), PROPHOTO_LUMA_W);
+                if wide > 1e-6 {
+                    ratios.push(chroma(direction, SRGB_LUMA_W) / wide);
+                }
+            }
+        }
+        ratios.sort_by(f32::total_cmp);
+        let median = ratios[ratios.len() / 2];
+
+        assert!(
+            (median - 1.40).abs() < 0.05,
+            "chroma shrank by {median}, not the 1.40 the tolerances assume"
+        );
+        for (scaled, original) in [
+            (SHADER_CHROMA_TOL.0, ORIGINAL_CHROMA_TOL.0),
+            (SHADER_CHROMA_TOL.1, ORIGINAL_CHROMA_TOL.1),
+        ] {
+            let expected = original / median;
+            assert!(
+                (scaled - expected).abs() < 0.005,
+                "tolerance {scaled} should be {expected:.3}, which is {original} over {median:.2}"
+            );
+        }
+    }
+
+    /// Luminance is the same quantity in both spaces, since each normalises
+    /// white to one, so the tolerances measured against it were left alone.
+    #[test]
+    fn luminance_differences_do_not_shrink() {
+        const PROPHOTO_LUMA_W: [f32; 3] = [0.2880402, 0.7118741, 0.0000857];
+        const SRGB_LUMA_W: [f32; 3] = [0.2126, 0.7152, 0.0722];
+        fn luma(c: [f32; 3], w: [f32; 3]) -> f32 {
+            c[0] * w[0] + c[1] * w[1] + c[2] * w[2]
+        }
+
+        let srgb_to_prophoto = invert(&prophoto_to_srgb()).unwrap();
+        let mut ratios = Vec::new();
+        for i in 0..720 {
+            let angle = i as f32 * std::f32::consts::TAU / 720.0;
+            for axis in 0..3 {
+                let mut direction = [0.0f32; 3];
+                direction[axis] = angle.cos();
+                direction[(axis + 1) % 3] = angle.sin();
+                let wide = luma(apply(&srgb_to_prophoto, direction), PROPHOTO_LUMA_W).abs();
+                let narrow = luma(direction, SRGB_LUMA_W).abs();
+                if wide > 1e-4 && narrow > 1e-4 {
+                    ratios.push(narrow / wide);
+                }
+            }
+        }
+        ratios.sort_by(f32::total_cmp);
+        let median = ratios[ratios.len() / 2];
+        assert!(
+            (median - 1.0).abs() < 0.02,
+            "luminance scaled by {median}, so its tolerances would need changing too"
+        );
+    }
+
+    /// Clarity raises the ratio between a pixel and its surroundings to the
+    /// slider's power. A bright specularity on near black drives that ratio
+    /// into the hundreds, which is a division artefact rather than detail.
+    #[test]
+    fn clarity_gain_is_bounded_without_touching_real_detail() {
+        const SHADER_DETAIL_STOPS: f32 = 2.0;
+        let gain = |centre: f32, blurred: f32, amount: f32| {
+            let log_ratio = (centre / blurred)
+                .log2()
+                .clamp(-SHADER_DETAIL_STOPS, SHADER_DETAIL_STOPS);
+            (log_ratio * amount).exp2()
+        };
+
+        // Ordinary texture and a strong edge have to come through untouched.
+        assert!((gain(0.20, 0.18, 0.8) - (0.20f32 / 0.18).powf(0.8)).abs() < 1e-4);
+        assert!((gain(0.40, 0.15, 0.8) - (0.40f32 / 0.15).powf(0.8)).abs() < 1e-4);
+
+        // The pathological cases are what the bound is for.
+        assert!(
+            gain(0.50, 0.010, 0.8) < 4.0,
+            "specular on dark reached {}",
+            gain(0.50, 0.010, 0.8)
+        );
+        assert!(
+            gain(0.50, 0.001, 0.8) < 4.0,
+            "specular on black reached {}",
+            gain(0.50, 0.001, 0.8)
+        );
+    }
+
     #[test]
     fn shader_constants_match_this_module() {
         const SHADER_PROPHOTO_TO_SRGB: Mat3 = [
