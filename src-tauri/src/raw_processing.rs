@@ -38,31 +38,76 @@ fn is_linear_raw_format(raw_image: &RawImage) -> bool {
     )
 }
 
+/// Nominal temperature of a DNG illuminant code.
+///
+/// Returns None where the code names no particular light, in which case the
+/// matrix it labels cannot take part in interpolation.
+fn illuminant_cct(illuminant: Illuminant) -> Option<f32> {
+    Some(match illuminant {
+        Illuminant::A | Illuminant::Tungsten => 2856.0,
+        Illuminant::B => 4874.0,
+        Illuminant::C => 6774.0,
+        Illuminant::D50 => 5003.0,
+        Illuminant::D55 | Illuminant::Daylight | Illuminant::FineWeather | Illuminant::Flash => {
+            5503.0
+        }
+        Illuminant::D65 | Illuminant::CloudyWeather => 6504.0,
+        Illuminant::D75 | Illuminant::Shade => 7504.0,
+        Illuminant::IsoStudioTungsten => 3200.0,
+        Illuminant::Fluorescent | Illuminant::CoolWhiteFluorescent => 4230.0,
+        Illuminant::DaylightFluorescent => 6430.0,
+        Illuminant::DaylightWhiteFluorescent => 5000.0,
+        Illuminant::WhiteFluorescent => 3450.0,
+        Illuminant::Unknown => return None,
+    })
+}
+
+fn to_mat3(coefficients: &[f32]) -> Mat3 {
+    let mut m: Mat3 = [[0.0; 3]; 3];
+    for i in 0..3 {
+        for j in 0..3 {
+            m[i][j] = coefficients[i * 3 + j];
+        }
+    }
+    m
+}
+
 /// Builds the camera-native to linear ProPhoto transform for this image.
 ///
-/// Returns None when the file carries no usable 3x3 colour matrix, in which
-/// case the caller leaves rawler's own sRGB calibration in place rather than
+/// Cameras are characterised at two reference illuminants, and using either one
+/// alone renders anything lit differently with the wrong colorimetry. Where both
+/// are present they are interpolated at the frame's own temperature.
+///
+/// Returns None when the file carries no usable 3x3 colour matrix, in which case
+/// the caller leaves rawler's own sRGB calibration in place rather than
 /// rendering the image wrong.
-fn camera_to_working_space(raw_image: &RawImage) -> Option<Mat3> {
-    let (_illuminant, matrix) = raw_image
-        .color_matrix
-        .iter()
-        .find(|(illuminant, _)| **illuminant == Illuminant::D65)
-        .or_else(|| raw_image.color_matrix.iter().next())?;
-
+fn camera_to_working_space(raw_image: &RawImage, wb_coeffs: [f32; 4]) -> Option<Mat3> {
     // A four-colour sensor carries twelve coefficients and demosaics to a
     // four-channel intermediate that no 3x3 can resolve. Truncating to the
     // first nine would build a plausible-looking matrix for the wrong sensor.
-    if matrix.len() != 9 {
-        return None;
-    }
+    let usable: Vec<(&Illuminant, &Vec<f32>)> = raw_image
+        .color_matrix
+        .iter()
+        .filter(|(_, coefficients)| coefficients.len() == 9)
+        .collect();
 
-    let mut xyz2cam: Mat3 = [[0.0; 3]; 3];
-    for i in 0..3 {
-        for j in 0..3 {
-            xyz2cam[i][j] = matrix[i * 3 + j];
+    let mut referenced: Vec<(f32, Mat3)> = usable
+        .iter()
+        .filter_map(|(illuminant, coefficients)| {
+            illuminant_cct(**illuminant).map(|cct| (cct, to_mat3(coefficients)))
+        })
+        .collect();
+    referenced.sort_by(|a, b| a.0.total_cmp(&b.0));
+
+    let xyz2cam = match referenced.len() {
+        0 => to_mat3(usable.first()?.1),
+        1 => referenced[0].1,
+        _ => {
+            let warm = referenced[0];
+            let cool = referenced[referenced.len() - 1];
+            crate::white_balance::interpolate_camera_matrix(warm, cool, wb_coeffs)?
         }
-    }
+    };
     color_space::cam_to_prophoto(xyz2cam)
 }
 
@@ -132,8 +177,17 @@ fn develop_internal(
         *level = u32::MAX;
     }
 
+    raw_image.wb_coeffs =
+        crate::multi_exposure::neutralize_wb_if_multiexposure(raw_image.wb_coeffs, file_bytes);
+
+    let wb = if raw_image.wb_coeffs[0].is_nan() {
+        [1.0f32; 4]
+    } else {
+        raw_image.wb_coeffs
+    };
+
     let working_transform = if apply_calibration {
-        camera_to_working_space(&raw_image)
+        camera_to_working_space(&raw_image, wb)
     } else {
         None
     };
@@ -165,15 +219,6 @@ fn develop_internal(
     // Whatever we did not calibrate ourselves, rawler resolved to sRGB. Lifting
     // that into the working space below keeps exactly one space downstream.
     let rawler_calibrated = developer.steps.contains(&ProcessingStep::Calibrate);
-
-    raw_image.wb_coeffs =
-        crate::multi_exposure::neutralize_wb_if_multiexposure(raw_image.wb_coeffs, file_bytes);
-
-    let wb = if raw_image.wb_coeffs[0].is_nan() {
-        [1.0f32; 4]
-    } else {
-        raw_image.wb_coeffs
-    };
 
     check_cancel()?;
     let mut developed_intermediate = developer.develop_intermediate(&raw_image)?;

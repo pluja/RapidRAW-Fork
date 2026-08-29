@@ -162,6 +162,61 @@ pub fn adaptation_matrix(as_shot: [f32; 3], target: [f32; 3]) -> Option<Mat3> {
     ))
 }
 
+/// Blends two illuminant-referenced camera matrices at a temperature.
+///
+/// Interpolation runs in mireds, following the DNG specification, so the blend
+/// tracks perceived colour rather than crowding at the warm end.
+fn blend_camera_matrices(warm: (f32, Mat3), cool: (f32, Mat3), cct: f32) -> Mat3 {
+    let mired = 1.0e6 / cct.clamp(1000.0, 50000.0);
+    let warm_mired = 1.0e6 / warm.0;
+    let cool_mired = 1.0e6 / cool.0;
+
+    let span = warm_mired - cool_mired;
+    let g = if span.abs() < 1e-6 {
+        1.0
+    } else {
+        ((mired - cool_mired) / span).clamp(0.0, 1.0)
+    };
+
+    let mut out = [[0.0f32; 3]; 3];
+    for i in 0..3 {
+        for j in 0..3 {
+            out[i][j] = g * warm.1[i][j] + (1.0 - g) * cool.1[i][j];
+        }
+    }
+    out
+}
+
+/// Resolves the camera matrix for the illuminant a frame was actually shot
+/// under, given matrices measured at two reference illuminants.
+///
+/// The scene temperature is only knowable through the matrix, and the matrix
+/// depends on the temperature, so the two are settled by iteration. A handful
+/// of passes converges; the loop exits early once the estimate stops moving.
+pub fn interpolate_camera_matrix(
+    warm: (f32, Mat3),
+    cool: (f32, Mat3),
+    wb_coeffs: [f32; 4],
+) -> Option<Mat3> {
+    const MAX_PASSES: usize = 6;
+    const SETTLED_KELVIN: f32 = 1.0;
+
+    let mut cct = 5000.0f32;
+    for _ in 0..MAX_PASSES {
+        let matrix = blend_camera_matrices(warm, cool, cct);
+        let white = as_shot_white_xyz(matrix, wb_coeffs)?;
+        let (x, y) = xy_from_xyz(white);
+        let next = cct_from_xy(x, y);
+
+        if (next - cct).abs() < SETTLED_KELVIN {
+            cct = next;
+            break;
+        }
+        cct = next;
+    }
+    Some(blend_camera_matrices(warm, cool, cct))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -408,6 +463,83 @@ mod tests {
                 );
             }
         }
+    }
+
+    const X_S20_A: Mat3 = [
+        [1.6344, -1.0648, 0.1184],
+        [-0.2749, 1.0771, 0.2278],
+        [0.0152, 0.0417, 0.6427],
+    ];
+    const X_S20_D65: Mat3 = [
+        [1.2836, -0.5909, -0.1032],
+        [-0.3087, 1.1132, 0.2236],
+        [-0.0035, 0.0872, 0.5330],
+    ];
+
+    fn max_difference(a: Mat3, b: Mat3) -> f32 {
+        let mut worst = 0.0f32;
+        for r in 0..3 {
+            for c in 0..3 {
+                worst = worst.max((a[r][c] - b[r][c]).abs());
+            }
+        }
+        worst
+    }
+
+    #[test]
+    fn blending_at_a_reference_returns_that_matrix() {
+        let warm = (2856.0, X_S20_A);
+        let cool = (6504.0, X_S20_D65);
+        assert!(max_difference(blend_camera_matrices(warm, cool, 2856.0), X_S20_A) < 1e-5);
+        assert!(max_difference(blend_camera_matrices(warm, cool, 6504.0), X_S20_D65) < 1e-5);
+    }
+
+    #[test]
+    fn blending_clamps_outside_the_reference_range() {
+        let warm = (2856.0, X_S20_A);
+        let cool = (6504.0, X_S20_D65);
+        assert!(max_difference(blend_camera_matrices(warm, cool, 1200.0), X_S20_A) < 1e-5);
+        assert!(max_difference(blend_camera_matrices(warm, cool, 20000.0), X_S20_D65) < 1e-5);
+    }
+
+    /// Interpolation is circular, since the temperature is read through the very
+    /// matrix it selects. These check the loop settles somewhere physical.
+    #[test]
+    fn interpolation_converges_toward_the_lit_reference() {
+        let warm = (2856.0, X_S20_A);
+        let cool = (6504.0, X_S20_D65);
+
+        let daylight = interpolate_camera_matrix(warm, cool, [1.8179, 1.0, 1.8808, 1.0]).unwrap();
+        let (x, y) = xy_from_xyz(as_shot_white_xyz(daylight, [1.8179, 1.0, 1.8808, 1.0]).unwrap());
+        let cct = cct_from_xy(x, y);
+        assert!(
+            (4500.0..6000.0).contains(&cct),
+            "overcast frame settled at {cct} K"
+        );
+
+        let tungsten = interpolate_camera_matrix(warm, cool, [1.1, 1.0, 3.2, 1.0]).unwrap();
+        let (x, y) = xy_from_xyz(as_shot_white_xyz(tungsten, [1.1, 1.0, 3.2, 1.0]).unwrap());
+        let warm_cct = cct_from_xy(x, y);
+        assert!(
+            warm_cct < 3600.0,
+            "incandescent frame settled at {warm_cct} K"
+        );
+
+        assert!(
+            max_difference(tungsten, X_S20_A) < max_difference(daylight, X_S20_A),
+            "the warmer frame should resolve nearer the incandescent reference"
+        );
+    }
+
+    #[test]
+    fn interpolation_differs_from_using_one_reference_alone() {
+        let tungsten =
+            interpolate_camera_matrix((2856.0, X_S20_A), (6504.0, X_S20_D65), [1.1, 1.0, 3.2, 1.0])
+                .unwrap();
+        assert!(
+            max_difference(tungsten, X_S20_D65) > 0.05,
+            "interpolation collapsed onto the daylight matrix"
+        );
     }
 
     #[test]
