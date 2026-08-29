@@ -769,17 +769,20 @@ const OK_SKIN_GUARD: f32 = 0.45;
 const OK_VIBRANCE_STRENGTH: f32 = 2.0;
 const OK_CHROMA_REFERENCE: f32 = 0.16;
 
-// How sharply a band claims a colour. Bands are selected by projecting the
-// chroma vector onto each band's direction rather than by comparing hue angles:
-// hue is the arctangent of two small differences, so it is largely sensor noise
-// at low chroma, and selecting on it turned that noise into a visible cloud
-// across the smooth gradient of a sky. A projection carries no such
-// amplification, since it falls away with chroma rather than growing.
+// Bands are selected from the chroma vector divided by its own length plus a
+// floor. Dividing by the length alone gives hue, which is the arctangent of two
+// small differences and so mostly sensor noise near neutral; selecting on it
+// turned that noise into a visible cloud across the smooth gradient of a sky.
+// Dividing by the raw length instead is stable but barely claims a pale colour
+// at all, and a pale sky is still unambiguously blue to the photographer
+// adjusting it. The floor buys both: a true direction at useful chroma, folding
+// smoothly to nothing as a colour approaches grey.
 //
-// Lower is more selective, and also noisier. At 0.07 a pale sky takes about a
-// tenth of the adjustment with a wobble near half a display step, where hue
-// angles cost three times the wobble for the same effect.
-const OK_BAND_SOFTNESS: f32 = 0.07;
+// A lower floor claims pale colours harder and carries more of their noise; a
+// lower softness makes bands more selective. At these values a pale sky takes
+// around two fifths of the adjustment against a tenth for the raw vector.
+const OK_BAND_CHROMA_FLOOR: f32 = 0.02;
+const OK_BAND_SOFTNESS: f32 = 0.30;
 
 /// Cube root that keeps its argument's sign. A wide working space carries
 /// channels below zero, and a plain power of a negative base is not a number.
@@ -825,11 +828,13 @@ fn apply_oklch_color(
         hue = hue + 360.0;
     }
 
+    let selector = lab.yz / (chroma + OK_BAND_CHROMA_FLOOR);
+
     var weights: array<f32, 8>;
     var total: f32 = 0.0;
     for (var i = 0u; i < 8u; i = i + 1u) {
         let direction = radians(OK_BAND_CENTERS[i]);
-        let alignment = lab.y * cos(direction) + lab.z * sin(direction);
+        let alignment = selector.x * cos(direction) + selector.y * sin(direction);
         let weight = exp(alignment / OK_BAND_SOFTNESS);
         weights[i] = weight;
         total = total + weight;

@@ -205,8 +205,16 @@ mod tests {
     }
 
     const BAND_CENTERS: [f32; 8] = [29.23, 67.93, 109.78, 142.51, 194.80, 264.06, 311.99, 328.36];
-    /// Mirrors OK_BAND_SOFTNESS in shader.wgsl.
-    const SHADER_BAND_SOFTNESS: f32 = 0.07;
+    /// Mirror the band selection constants in shader.wgsl.
+    const SHADER_BAND_CHROMA_FLOOR: f32 = 0.02;
+    const SHADER_BAND_SOFTNESS: f32 = 0.30;
+
+    fn to_working(srgb: [f32; 3]) -> [f32; 3] {
+        color_space::apply(
+            &color_space::invert(&color_space::prophoto_to_srgb()).unwrap(),
+            srgb,
+        )
+    }
 
     fn hue_distance(a: f32, b: f32) -> f32 {
         let d = (a - b).abs() % 360.0;
@@ -216,11 +224,16 @@ mod tests {
     /// Reproduces the shader's band selection: each band's share of a colour,
     /// measured by projecting the chroma vector onto the band's direction.
     fn band_shares(lab: [f32; 3], softness: f32) -> [f32; 8] {
+        let chroma = (lab[1] * lab[1] + lab[2] * lab[2]).sqrt();
+        let selector = [
+            lab[1] / (chroma + SHADER_BAND_CHROMA_FLOOR),
+            lab[2] / (chroma + SHADER_BAND_CHROMA_FLOOR),
+        ];
         let mut weights = [0.0f32; 8];
         let mut total = 0.0;
         for i in 0..8 {
             let direction = BAND_CENTERS[i].to_radians();
-            let alignment = lab[1] * direction.cos() + lab[2] * direction.sin();
+            let alignment = selector[0] * direction.cos() + selector[1] * direction.sin();
             weights[i] = (alignment / softness).exp();
             total += weights[i];
         }
@@ -253,48 +266,57 @@ mod tests {
         lch[0] * (1.0 + amount * (weights[band] / total) * authority)
     }
 
-    /// A sky is smooth to the eye and noisy per pixel. Selecting bands by
-    /// projection rather than by hue angle has to buy less noise for the same
-    /// visible effect, or the change was not worth making.
+    /// A real sky is far paler than a saturated blue: an X-S20 frame measures
+    /// around 0.045 chroma at the top and 0.011 at the horizon. A band has to
+    /// claim it anyway, because it is still unmistakably blue to look at.
     #[test]
-    fn projection_beats_hue_angle_at_equal_effect() {
-        let sky = [0.42, 0.53, 0.66];
-        let noisy = [0.425, 0.527, 0.667];
-        let base = oklab_from_prophoto(sky)[0];
-
-        let projected_effect = (base - band_luminance(sky, 5, -0.93)) / base;
-        let projected_noise =
-            (band_luminance(sky, 5, -0.93) - band_luminance(noisy, 5, -0.93)).abs() / base;
-
-        // The hue-angle authority that produces the same visible effect.
-        let matched = 0.155f32;
-        let angle_effect = (base - hue_angle_luminance(sky, 5, -0.93, matched)) / base;
-        let angle_noise = (hue_angle_luminance(sky, 5, -0.93, matched)
-            - hue_angle_luminance(noisy, 5, -0.93, matched))
-        .abs()
-            / base;
-
+    fn a_pale_sky_is_claimed_by_its_band() {
+        let upper = to_working([0.42, 0.58, 0.75]);
+        let share = band_shares(oklab_from_prophoto(upper), SHADER_BAND_SOFTNESS)[5];
         assert!(
-            (angle_effect - projected_effect).abs() < 0.03,
-            "the comparison is only fair at matching effect: {projected_effect:.3} vs {angle_effect:.3}"
+            share > 0.30,
+            "a pale sky took only {:.0}% of its band",
+            share * 100.0
         );
+
+        let horizon = to_working([0.72, 0.78, 0.82]);
+        let faint = band_shares(oklab_from_prophoto(horizon), SHADER_BAND_SOFTNESS)[5];
         assert!(
-            projected_noise < angle_noise * 0.7,
-            "projection let through {projected_noise:.5} where hue angles let through {angle_noise:.5}"
+            faint > 0.10 && faint < share,
+            "the near-neutral horizon took {:.0}%",
+            faint * 100.0
+        );
+    }
+
+    /// A sky is smooth to the eye and noisy per pixel, so what the band lets
+    /// through has to stay well under a display step.
+    #[test]
+    fn a_pale_sky_does_not_carry_its_noise_into_lightness() {
+        let upper = to_working([0.42, 0.58, 0.75]);
+        let noisy = to_working([0.425, 0.577, 0.756]);
+        let base = oklab_from_prophoto(upper)[0];
+        let wobble =
+            (band_luminance(upper, 5, -0.99) - band_luminance(noisy, 5, -0.99)).abs() / base;
+        assert!(
+            wobble < 0.015,
+            "a noise step moved lightness by {:.2}%",
+            wobble * 100.0
         );
     }
 
     /// A colour no band owns divides evenly between all eight, so measuring
-    /// each share against an even one leaves neutrals alone with no threshold.
+    /// each share against an even one leaves neutrals alone with no threshold
+    /// to cross. The bound is a fraction of a display step rather than zero,
+    /// since claiming pale colours firmly necessarily lets a trace through.
     #[test]
     fn neutrals_are_untouched_by_a_band() {
         for level in [0.15f32, 0.45, 0.8] {
             let grey = [level, level, level];
             let base = oklab_from_prophoto(grey)[0];
-            let moved = (base - band_luminance(grey, 5, -0.93)).abs() / base;
+            let moved = (base - band_luminance(grey, 5, -0.99)).abs() / base;
             assert!(
-                moved < 0.001,
-                "grey at {level} moved by {:.4}%",
+                moved < 0.003,
+                "grey at {level} moved by {:.4}%, which would show as banding",
                 moved * 100.0
             );
         }
@@ -302,7 +324,7 @@ mod tests {
 
     #[test]
     fn band_luminance_still_reaches_saturated_colour() {
-        let vivid = [0.06, 0.14, 0.70];
+        let vivid = to_working([0.10, 0.30, 0.85]);
         let base = oklab_from_prophoto(vivid)[0];
         let lifted = band_luminance(vivid, 5, -0.93);
         assert!(
@@ -314,7 +336,7 @@ mod tests {
     #[test]
     fn a_band_does_not_reach_across_the_wheel() {
         // Setting blue must leave an orange essentially alone.
-        let orange = [0.72, 0.32, 0.08];
+        let orange = to_working([0.85, 0.45, 0.15]);
         let base = oklab_from_prophoto(orange)[0];
         let moved = (base - band_luminance(orange, 5, -0.93)).abs() / base;
         assert!(moved < 0.02, "blue reached orange by {:.2}%", moved * 100.0);
