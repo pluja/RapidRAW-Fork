@@ -66,6 +66,7 @@ export enum DetailsAdjustment {
   Centré = 'centré',
   ColorNoiseReduction = 'colorNoiseReduction',
   LumaNoiseReduction = 'lumaNoiseReduction',
+  SharpenMasking = 'sharpenMasking',
   Sharpness = 'sharpness',
   SharpnessThreshold = 'sharpnessThreshold',
   ChromaticAberrationRedCyan = 'chromaticAberrationRedCyan',
@@ -170,6 +171,11 @@ export interface Adjustments {
   /// Index of the colour band whose selection is being shown, or -1 for none.
   /// A view mode rather than an edit, cleared when the panel closes.
   colorMixerPreview: number;
+  /// How much sharpening is held back from flat areas.
+  sharpenMasking: number;
+  /// True while the user holds the key that shows the sharpening mask. A view
+  /// mode rather than an edit, so it is never written to disk.
+  sharpenMaskPreview: boolean;
   colorGrading: ColorGradingProps;
   colorNoiseReduction: number;
   contrast: number;
@@ -509,6 +515,8 @@ export const INITIAL_ADJUSTMENTS: Adjustments = {
   chromaticAberrationRedCyan: 0,
   colorCalibration: { ...INITIAL_COLOR_CALIBRATION },
   colorMixerPreview: -1,
+  sharpenMasking: 0,
+  sharpenMaskPreview: false,
   colorGrading: { ...INITIAL_COLOR_GRADING },
   colorNoiseReduction: 0,
   contrast: 0,
@@ -720,6 +728,8 @@ export const normalizeLoadedAdjustments = (loadedAdjustments: Adjustments): any 
     // Normalising rebuilds this object field by field, so anything absent here
     // is dropped. A stored image never carries a selection view, so it starts off.
     colorMixerPreview: loadedAdjustments.colorMixerPreview ?? INITIAL_ADJUSTMENTS.colorMixerPreview,
+    sharpenMasking: loadedAdjustments.sharpenMasking ?? INITIAL_ADJUSTMENTS.sharpenMasking,
+    sharpenMaskPreview: false,
     colorGrading: { ...INITIAL_ADJUSTMENTS.colorGrading, ...(loadedAdjustments.colorGrading || {}) },
     hsl: { ...INITIAL_ADJUSTMENTS.hsl, ...(loadedAdjustments.hsl || {}) },
     curves: loadedAdjustments.curves ? deepCloneCurves(loadedAdjustments.curves) : getDefaultCurves(),

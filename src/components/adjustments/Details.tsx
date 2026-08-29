@@ -1,3 +1,4 @@
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import GroupVisibilityToggle from '../ui/GroupVisibilityToggle';
 import { useGroupVisibility } from '../../hooks/useGroupVisibility';
@@ -23,10 +24,42 @@ export default function DetailsPanel({
   onDragStateChange,
 }: DetailsPanelProps) {
   const groups = useGroupVisibility('details', adjustments, setAdjustments);
+
+  // Lightroom shows this mask while Alt is held during a drag, so the slider is
+  // set by looking at what it protects. Alt has to be read from the pointer as
+  // well as the keyboard, since holding it before the drag starts fires no key
+  // event.
+  const [isMaskingDrag, setIsMaskingDrag] = useState(false);
+  const [isAltHeld, setIsAltHeld] = useState(false);
+
+  useEffect(() => {
+    if (!isMaskingDrag) {
+      return;
+    }
+    const follow = (e: KeyboardEvent) => setIsAltHeld(e.altKey);
+    window.addEventListener('keydown', follow);
+    window.addEventListener('keyup', follow);
+    return () => {
+      window.removeEventListener('keydown', follow);
+      window.removeEventListener('keyup', follow);
+    };
+  }, [isMaskingDrag]);
+
+  const showMask = isMaskingDrag && isAltHeld;
+  useEffect(() => {
+    setAdjustments((prev: Adjustments) =>
+      prev.sharpenMaskPreview === showMask ? prev : { ...prev, sharpenMaskPreview: showMask },
+    );
+  }, [showMask, setAdjustments]);
   const { t } = useTranslation();
 
-  const handleAdjustmentChange = (key: string, value: string) => {
-    const numericValue = parseInt(value, 10);
+  // Sliders hand back a number, which parseInt only accepted because JavaScript
+  // stringified it first, truncating anything below a whole step on the way.
+  const handleAdjustmentChange = (key: string, value: number | string) => {
+    const numericValue = Number(value);
+    if (Number.isNaN(numericValue)) {
+      return;
+    }
     setAdjustments((prev: Partial<Adjustments>) => ({ ...prev, [key]: numericValue }));
   };
 
@@ -63,6 +96,30 @@ export default function DetailsPanel({
             defaultValue={15}
             fillOrigin="min"
           />
+          <div
+            onPointerDownCapture={(e: React.PointerEvent) => setIsAltHeld(e.altKey)}
+            data-tooltip={t('adjustments.details.maskingTooltip')}
+          >
+            <Slider
+              label={t('adjustments.details.masking')}
+              max={100}
+              min={0}
+              onChange={(e: { target: { value: number } }) =>
+                handleAdjustmentChange(DetailsAdjustment.SharpenMasking, e.target.value)
+              }
+              step={1}
+              value={adjustments.sharpenMasking ?? 0}
+              onDragStateChange={(dragging: boolean) => {
+                setIsMaskingDrag(dragging);
+                if (!dragging) {
+                  setIsAltHeld(false);
+                }
+                onDragStateChange?.(dragging);
+              }}
+              defaultValue={0}
+              fillOrigin="min"
+            />
+          </div>
         </div>
       )}
 

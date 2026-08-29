@@ -109,7 +109,9 @@
       "sharpening": "Enfoque",
       "sharpness": "Nitidez",
       "structure": "Estructura",
-      "threshold": "Umbral"
+      "threshold": "Umbral",
+      "masking": "Máscara",
+      "maskingTooltip": "Mantén Alt mientras arrastras para ver qué se enfoca"
     },
     "effects": {
       "amount": "Cantidad",

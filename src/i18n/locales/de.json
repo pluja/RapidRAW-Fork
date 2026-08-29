@@ -109,7 +109,9 @@
       "sharpening": "Schärfen",
       "sharpness": "Schärfe",
       "structure": "Struktur",
-      "threshold": "Schwellenwert"
+      "threshold": "Schwellenwert",
+      "masking": "Maskierung",
+      "maskingTooltip": "Alt gedrückt halten beim Ziehen, um zu sehen, was geschärft wird"
     },
     "effects": {
       "amount": "Stärke",

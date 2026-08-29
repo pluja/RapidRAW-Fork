@@ -109,7 +109,9 @@
       "sharpening": "銳化",
       "sharpness": "銳度",
       "structure": "結構",
-      "threshold": "臨界值"
+      "threshold": "臨界值",
+      "masking": "遮罩",
+      "maskingTooltip": "拖曳時按住 Alt 可檢視銳利化範圍"
     },
     "effects": {
       "amount": "數量",

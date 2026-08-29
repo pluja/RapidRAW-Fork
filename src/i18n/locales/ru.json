@@ -109,7 +109,9 @@
       "sharpening": "Резкость",
       "sharpness": "Резкость",
       "structure": "Структура",
-      "threshold": "Порог"
+      "threshold": "Порог",
+      "masking": "Маскирование",
+      "maskingTooltip": "Удерживайте Alt при перетаскивании, чтобы увидеть, что резкость затрагивает"
     },
     "effects": {
       "amount": "Величина",

@@ -41,8 +41,10 @@ const MIN_PRECISION = 0.08;
 const TOUCH_DRAG_THRESHOLD_PX = 10;
 const TOUCH_THUMB_HIT_RADIUS_PX = 24;
 
+// Shift only. Alt is reserved for the previews that show what a slider is
+// acting on, which is what it does in Lightroom.
 const hasFineAdjustmentModifier = (event: MouseEvent | TouchEvent | React.MouseEvent | React.TouchEvent) =>
-  'shiftKey' in event && (event.shiftKey || event.altKey);
+  'shiftKey' in event && event.shiftKey;
 
 const Slider = ({
   defaultValue = 0,

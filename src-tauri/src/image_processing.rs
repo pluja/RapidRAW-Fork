@@ -1504,8 +1504,10 @@ pub struct GlobalAdjustments {
     pub hue: f32,
     /// Which colour band to show the selection of, or negative for none.
     pub color_mixer_preview: f32,
-    _pad_color2: f32,
-    _pad_color3: f32,
+    /// How much of the sharpening is held back from flat areas, 0 for none.
+    pub sharpen_masking: f32,
+    /// Non-zero while the user is holding the key that shows the mask.
+    pub sharpen_mask_preview: f32,
 
     pub sharpness: f32,
     pub luma_noise_reduction: f32,
@@ -1659,6 +1661,7 @@ struct AdjustmentScales {
 
     sharpness: f32,
     sharpness_threshold: f32,
+    sharpen_masking: f32,
     luma_noise_reduction: f32,
     color_noise_reduction: f32,
     clarity: f32,
@@ -1708,6 +1711,7 @@ const SCALES: AdjustmentScales = AdjustmentScales {
 
     sharpness: 50.0,
     sharpness_threshold: 100.0,
+    sharpen_masking: 100.0,
     luma_noise_reduction: 100.0,
     color_noise_reduction: 100.0,
     clarity: 125.0,
@@ -2270,8 +2274,19 @@ fn get_global_adjustments_from_json(
             .get("colorMixerPreview")
             .and_then(|v| v.as_f64())
             .unwrap_or(-1.0) as f32,
-        _pad_color2: 0.0,
-        _pad_color3: 0.0,
+        sharpen_masking: get_val(
+            "details.sharpening",
+            "sharpenMasking",
+            SCALES.sharpen_masking,
+            None,
+        ),
+        // Held down rather than set, so it is a way of looking and section
+        // visibility does not gate it.
+        sharpen_mask_preview: js_adjustments
+            .get("sharpenMaskPreview")
+            .and_then(|v| v.as_bool())
+            .map(|shown| if shown { 1.0 } else { 0.0 })
+            .unwrap_or(0.0),
 
         sharpness: get_val("details.sharpening", "sharpness", SCALES.sharpness, None),
         luma_noise_reduction: get_val(
@@ -2291,7 +2306,12 @@ fn get_global_adjustments_from_json(
         dehaze: get_val("details.presence", "dehaze", SCALES.dehaze, None),
         structure: get_val("details.presence", "structure", SCALES.structure, None),
         centré: get_val("details.presence", "centré", SCALES.centré, None),
-        vignette_amount: get_val("effects.vignette", "vignetteAmount", SCALES.vignette_amount, None),
+        vignette_amount: get_val(
+            "effects.vignette",
+            "vignetteAmount",
+            SCALES.vignette_amount,
+            None,
+        ),
         vignette_midpoint: get_val(
             "effects.vignette",
             "vignetteMidpoint",
@@ -2478,7 +2498,11 @@ fn get_mask_adjustments_from_json(adj: &serde_json::Value) -> MaskAdjustments {
         vibrance: get_val("color.presence", "vibrance", SCALES.vibrance),
 
         sharpness: get_val("details.sharpening", "sharpness", SCALES.sharpness),
-        luma_noise_reduction: get_val("details.noiseReduction", "lumaNoiseReduction", SCALES.luma_noise_reduction),
+        luma_noise_reduction: get_val(
+            "details.noiseReduction",
+            "lumaNoiseReduction",
+            SCALES.luma_noise_reduction,
+        ),
         color_noise_reduction: get_val(
             "details.noiseReduction",
             "colorNoiseReduction",
@@ -2492,7 +2516,11 @@ fn get_mask_adjustments_from_json(adj: &serde_json::Value) -> MaskAdjustments {
         glow_amount: get_val("effects.creative", "glowAmount", SCALES.glow),
         halation_amount: get_val("effects.creative", "halationAmount", SCALES.halation),
         flare_amount: get_val("effects.creative", "flareAmount", SCALES.flares),
-        sharpness_threshold: get_val("details.sharpening", "sharpnessThreshold", SCALES.sharpness_threshold),
+        sharpness_threshold: get_val(
+            "details.sharpening",
+            "sharpnessThreshold",
+            SCALES.sharpness_threshold,
+        ),
 
         hue: get_val("color.hue", "hue", 1.0),
         _pad_cg1: 0.0,

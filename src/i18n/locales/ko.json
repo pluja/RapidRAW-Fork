@@ -109,7 +109,9 @@
       "sharpening": "선명도 향상",
       "sharpness": "선명도",
       "structure": "구조",
-      "threshold": "임계값"
+      "threshold": "임계값",
+      "masking": "마스킹",
+      "maskingTooltip": "드래그하는 동안 Alt를 누르면 선명하게 처리되는 영역이 표시됩니다"
     },
     "effects": {
       "amount": "양",

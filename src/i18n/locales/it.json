@@ -109,7 +109,9 @@
       "sharpening": "Aumento Nitidezza",
       "sharpness": "Nitidezza",
       "structure": "Struttura",
-      "threshold": "Soglia"
+      "threshold": "Soglia",
+      "masking": "Mascheratura",
+      "maskingTooltip": "Tieni premuto Alt mentre trascini per vedere cosa viene nitidizzato"
     },
     "effects": {
       "amount": "Quantità",

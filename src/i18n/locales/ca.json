@@ -109,7 +109,9 @@
       "sharpening": "Enfocament",
       "sharpness": "Nitidesa",
       "structure": "Estructura",
-      "threshold": "Llindar"
+      "threshold": "Llindar",
+      "masking": "Màscara",
+      "maskingTooltip": "Mantén Alt mentre arrossegues per veure què s'enfoca"
     },
     "effects": {
       "amount": "Quantitat",

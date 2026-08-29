@@ -109,7 +109,9 @@
       "sharpening": "Nitidez",
       "sharpness": "Nitidez",
       "structure": "Estrutura",
-      "threshold": "Limiar"
+      "threshold": "Limiar",
+      "masking": "Máscara",
+      "maskingTooltip": "Segure Alt ao arrastar para ver o que é nitidez"
     },
     "effects": {
       "amount": "Quantidade",

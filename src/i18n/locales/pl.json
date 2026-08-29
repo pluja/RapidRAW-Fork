@@ -109,7 +109,9 @@
       "sharpening": "Wyostrzanie",
       "sharpness": "Ostrość",
       "structure": "Struktura",
-      "threshold": "Próg"
+      "threshold": "Próg",
+      "masking": "Maskowanie",
+      "maskingTooltip": "Przytrzymaj Alt podczas przeciągania, aby zobaczyć, co jest wyostrzane"
     },
     "effects": {
       "amount": "Ilość",

@@ -44,8 +44,8 @@ struct GlobalAdjustments {
     vibrance: f32,
     hue: f32,
     color_mixer_preview: f32,
-    _pad_color2: f32,
-    _pad_color3: f32,
+    sharpen_masking: f32,
+    sharpen_mask_preview: f32,
 
     sharpness: f32,
     luma_noise_reduction: f32,
@@ -1095,6 +1095,18 @@ fn sharpen_soft_limit(v: f32, lo: f32, hi: f32, margin: f32) -> f32 {
     return v;
 }
 
+/// How much sharpening a pixel receives alongside the sharpened colour, so the
+/// mask can be shown without computing it a second time.
+struct SharpenOutput {
+    color: vec3<f32>,
+    mask: f32,
+}
+
+/// Edge strength either side of which sharpening is held back, at full masking.
+/// Below the lower figure a pixel counts as flat.
+const SHARPEN_MASK_KNEE_LOW: f32 = 0.02;
+const SHARPEN_MASK_KNEE_HIGH: f32 = 0.34;
+
 fn apply_sharpen(
     color: vec3<f32>,
     b1_in: vec3<f32>,
@@ -1102,16 +1114,17 @@ fn apply_sharpen(
     coords_i: vec2<i32>,
     amount: f32,
     threshold: f32,
+    masking: f32,
     is_raw: u32
-) -> vec3<f32> {
+) -> SharpenOutput {
     if (abs(amount) < 0.0005) {
-        return color;
+        return SharpenOutput(color, 1.0);
     }
 
     if (amount < 0.0) {
         var b1_lin = b1_in;
         if (is_raw == 0u) { b1_lin = input_to_working(b1_in); }
-        return mix(color, b1_lin, clamp(-amount * 0.5, 0.0, 1.0));
+        return SharpenOutput(mix(color, b1_lin, clamp(-amount * 0.5, 0.0, 1.0)), 1.0);
     }
 
     var color_enc = color;
@@ -1142,6 +1155,12 @@ fn apply_sharpen(
     var hi = -1.0e9;
     var gx = 0.0;
     var gy = 0.0;
+    // A second gradient over the whole five by five, which costs no extra reads
+    // and gives a mask that does not crawl with sensor noise the way a three by
+    // three would.
+    var gx_wide = 0.0;
+    var gy_wide = 0.0;
+    let taper = array<f32, 5>(1.0, 2.0, 3.0, 2.0, 1.0);
 
     for (var iy = 0; iy < 5; iy = iy + 1) {
         let oy = iy - 2;
@@ -1162,12 +1181,25 @@ fn apply_sharpen(
                 gx += sl * f32(ox) * (2.0 - abs(f32(oy)));
                 gy += sl * f32(oy) * (2.0 - abs(f32(ox)));
             }
+
+            gx_wide += sl * f32(ox) * taper[iy];
+            gy_wide += sl * f32(oy) * taper[ix];
         }
+    }
+
+    // Masking holds sharpening back where there is no structure, so noise in a
+    // sky or the smooth part of skin is left alone. At zero it does nothing, so
+    // an image edited before this existed renders as it did.
+    let edge = sqrt(gx_wide * gx_wide + gy_wide * gy_wide) / 9.0;
+    var mask = 1.0;
+    if (masking > 0.001) {
+        let knee = mix(SHARPEN_MASK_KNEE_LOW, SHARPEN_MASK_KNEE_HIGH, masking);
+        mask = mix(1.0, smoothstep(knee * 0.15, knee, edge), masking);
     }
 
     let deconv_delta = (acc - center_tap) * clamp(amount * 0.60, 0.0, 1.0);
 
-    var l_new = l + boost + deconv_delta;
+    var l_new = l + (boost + deconv_delta) * mask;
 
     let range = max(hi - lo, 1e-5);
     l_new = sharpen_soft_limit(
@@ -1203,9 +1235,9 @@ fn apply_sharpen(
 
     let ratio = l_new / max(l, 1e-4);
     if (is_raw == 1u) {
-        return color * (ratio * ratio);
+        return SharpenOutput(color * (ratio * ratio), mask);
     }
-    return input_to_working(max(color_enc * ratio, vec3<f32>(0.0)));
+    return SharpenOutput(input_to_working(max(color_enc * ratio, vec3<f32>(0.0))), mask);
 }
 
 fn apply_centre_local_contrast(
@@ -2001,11 +2033,13 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
     var locally_contrasted_rgb = initial_linear_rgb;
 
-    locally_contrasted_rgb = apply_sharpen(
+    let sharpened = apply_sharpen(
         locally_contrasted_rgb,
         sharpness_blurred, tonal_blurred,
-        absolute_coord_i, t_sharpness, t_sharp_thresh, is_raw
+        absolute_coord_i, t_sharpness, t_sharp_thresh,
+        adjustments.global.sharpen_masking, is_raw
     );
+    locally_contrasted_rgb = sharpened.color;
 
     locally_contrasted_rgb = apply_local_contrast(locally_contrasted_rgb, clarity_blurred, t_clarity, is_raw, 1u, 0.0);
     locally_contrasted_rgb = apply_local_contrast(locally_contrasted_rgb, structure_blurred, t_structure, is_raw, 1u, 0.0);
@@ -2188,6 +2222,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         } else if (any(final_rgb < vec3<f32>(SHADOW_CLIP_THRESHOLD))) {
             final_rgb = SHADOW_WARNING_COLOR;
         }
+    }
+
+    // Showing the mask the way Lightroom does, as plain black and white, so the
+    // slider can be set by looking at what it protects rather than by guessing.
+    if (adjustments.global.sharpen_mask_preview >= 0.5) {
+        final_rgb = vec3<f32>(clamp(sharpened.mask, 0.0, 1.0));
     }
 
     let dither_amount = 1.0 / 255.0;

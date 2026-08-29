@@ -109,7 +109,9 @@
       "sharpening": "Sharpening",
       "sharpness": "Sharpness",
       "structure": "Structure",
-      "threshold": "Threshold"
+      "threshold": "Threshold",
+      "masking": "Masking",
+      "maskingTooltip": "Hold Alt while dragging to see what is sharpened"
     },
     "effects": {
       "amount": "Amount",

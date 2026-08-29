@@ -109,7 +109,9 @@
       "sharpening": "Accentuation",
       "sharpness": "Netteté",
       "structure": "Structure",
-      "threshold": "Seuil"
+      "threshold": "Seuil",
+      "masking": "Masquage",
+      "maskingTooltip": "Maintenez Alt en faisant glisser pour voir ce qui est accentué"
     },
     "effects": {
       "amount": "Intensité",

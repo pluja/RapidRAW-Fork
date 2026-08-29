@@ -109,7 +109,9 @@
       "sharpening": "锐化",
       "sharpness": "锐度",
       "structure": "结构",
-      "threshold": "阈值"
+      "threshold": "阈值",
+      "masking": "蒙版",
+      "maskingTooltip": "拖动时按住 Alt 可查看锐化范围"
     },
     "effects": {
       "amount": "数量",
