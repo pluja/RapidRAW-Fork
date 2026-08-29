@@ -56,12 +56,26 @@ pub fn apply(m: &Mat3, v: [f32; 3]) -> [f32; 3] {
     ]
 }
 
+/// Inverts a 3x3 matrix, returning None when it is too ill-conditioned to trust.
+///
+/// Arithmetic is done in f64 because an f32 determinant of a camera matrix
+/// carries roundoff on the order of 1e-7, which no absolute threshold can
+/// distinguish from genuine near-singularity. The test is relative: the
+/// determinant is compared against the product of the row 1-norms, which for
+/// real camera matrices lands near 0.5 and for a rank-deficient one near zero.
 pub fn invert(m: &Mat3) -> Option<Mat3> {
-    let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+    let d = m.map(|row| row.map(f64::from));
 
-    if det.abs() < 1e-12 {
+    let det = d[0][0] * (d[1][1] * d[2][2] - d[1][2] * d[2][1])
+        - d[0][1] * (d[1][0] * d[2][2] - d[1][2] * d[2][0])
+        + d[0][2] * (d[1][0] * d[2][1] - d[1][1] * d[2][0]);
+
+    let norm_product: f64 = d
+        .iter()
+        .map(|row| row.iter().map(|v| v.abs()).sum::<f64>())
+        .product();
+
+    if !det.is_finite() || norm_product == 0.0 || det.abs() / norm_product < 1e-4 {
         return None;
     }
     let inv_det = 1.0 / det;
@@ -71,26 +85,34 @@ pub fn invert(m: &Mat3) -> Option<Mat3> {
         for j in 0..3 {
             let (r0, r1) = ((j + 1) % 3, (j + 2) % 3);
             let (c0, c1) = ((i + 1) % 3, (i + 2) % 3);
-            out[i][j] = (m[r0][c0] * m[r1][c1] - m[r0][c1] * m[r1][c0]) * inv_det;
+            let cofactor = d[r0][c0] * d[r1][c1] - d[r0][c1] * d[r1][c0];
+            out[i][j] = (cofactor * inv_det) as f32;
         }
     }
     Some(out)
 }
 
-/// Scales each row to sum to 1 so a white-balanced camera neutral maps to
-/// (1, 1, 1) in the destination space, which is what makes an explicit
-/// chromatic adaptation of the camera matrix unnecessary.
-fn normalize_rows(m: Mat3) -> Mat3 {
+/// Scales each row to sum to 1, pinning the neutral axis so a white-balanced
+/// camera neutral maps to (1, 1, 1) in the destination space.
+///
+/// This is the dcraw/rawler approximation, not a true chromatic adaptation of
+/// the camera matrix: off-neutral colours still differ from an illuminant
+/// interpolated ColorMatrix/ForwardMatrix pipeline.
+///
+/// Returns None on a non-positive row sum, which would otherwise flip that
+/// row's sign or leave it unscaled.
+fn normalize_rows(m: Mat3) -> Option<Mat3> {
     let mut out = m;
     for row in out.iter_mut() {
         let sum: f32 = row.iter().sum();
-        if sum.abs() > f32::EPSILON {
-            for c in row.iter_mut() {
-                *c /= sum;
-            }
+        if !(sum > 1e-6) {
+            return None;
+        }
+        for c in row.iter_mut() {
+            *c /= sum;
         }
     }
-    out
+    Some(out)
 }
 
 fn bradford_adaptation(src_white: [f32; 3], dst_white: [f32; 3]) -> Mat3 {
@@ -109,10 +131,14 @@ fn bradford_adaptation(src_white: [f32; 3], dst_white: [f32; 3]) -> Mat3 {
 
 /// Builds the unclipped camera-native to linear ProPhoto transform.
 ///
-/// `xyz2cam` is the camera's DNG colour matrix. Returns None when the matrix is
-/// singular, in which case the caller should fall back rather than emit garbage.
+/// `xyz2cam` is the camera's DNG colour matrix. The caller must apply white
+/// balance coefficients to the camera RGB before applying this matrix, since
+/// the neutral axis is pinned on that assumption.
+///
+/// Returns None when the matrix is unusable, so the caller can fall back rather
+/// than emit garbage.
 pub fn cam_to_prophoto(xyz2cam: Mat3) -> Option<Mat3> {
-    let prophoto2cam = normalize_rows(multiply(&xyz2cam, &PROPHOTO_TO_XYZ_D50));
+    let prophoto2cam = normalize_rows(multiply(&xyz2cam, &PROPHOTO_TO_XYZ_D50))?;
     invert(&prophoto2cam)
 }
 
@@ -124,6 +150,68 @@ pub fn prophoto_to_srgb() -> Mat3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const ROMM_PRIMARIES: [[f64; 2]; 3] = [[0.7347, 0.2653], [0.1596, 0.8404], [0.0366, 0.0001]];
+    const SRGB_PRIMARIES: [[f64; 2]; 3] = [[0.64, 0.33], [0.30, 0.60], [0.15, 0.06]];
+
+    /// Published Bradford D50 to D65 adaptation matrix.
+    const BRADFORD_D50_TO_D65: [[f64; 3]; 3] = [
+        [0.9555766, -0.0230393, 0.0631636],
+        [-0.0282895, 1.0099416, 0.0210077],
+        [0.0122982, -0.0204830, 1.3299098],
+    ];
+
+    fn invert_f64(m: [[f64; 3]; 3]) -> [[f64; 3]; 3] {
+        let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+            - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+            + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+        let mut out = [[0.0f64; 3]; 3];
+        for i in 0..3 {
+            for j in 0..3 {
+                let (r0, r1) = ((j + 1) % 3, (j + 2) % 3);
+                let (c0, c1) = ((i + 1) % 3, (i + 2) % 3);
+                out[i][j] = (m[r0][c0] * m[r1][c1] - m[r0][c1] * m[r1][c0]) / det;
+            }
+        }
+        out
+    }
+
+    /// Derives an RGB-to-XYZ matrix from primary chromaticities and a white
+    /// point, independently of the constants under test.
+    fn derive_rgb_to_xyz(primaries: [[f64; 2]; 3], white: [f64; 3]) -> [[f64; 3]; 3] {
+        let mut m = [[0.0f64; 3]; 3];
+        for (col, [x, y]) in primaries.iter().enumerate() {
+            m[0][col] = x / y;
+            m[1][col] = 1.0;
+            m[2][col] = (1.0 - x - y) / y;
+        }
+        let inv = invert_f64(m);
+        let scale: Vec<f64> = (0..3)
+            .map(|r| (0..3).map(|c| inv[r][c] * white[c]).sum())
+            .collect();
+
+        let mut out = [[0.0f64; 3]; 3];
+        for r in 0..3 {
+            for c in 0..3 {
+                out[r][c] = m[r][c] * scale[c];
+            }
+        }
+        out
+    }
+
+    fn assert_matrix_close(actual: Mat3, expected: [[f64; 3]; 3], tol: f64, what: &str) {
+        for r in 0..3 {
+            for c in 0..3 {
+                let diff = (actual[r][c] as f64 - expected[r][c]).abs();
+                assert!(
+                    diff < tol,
+                    "{what}: [{r}][{c}] was {}, expected {} (diff {diff:.3e}, tol {tol:.1e})",
+                    actual[r][c],
+                    expected[r][c]
+                );
+            }
+        }
+    }
 
     fn assert_close(a: [f32; 3], b: [f32; 3], tol: f32, what: &str) {
         for i in 0..3 {
@@ -137,9 +225,31 @@ mod tests {
     }
 
     #[test]
+    fn prophoto_matrix_matches_primaries() {
+        let derived = derive_rgb_to_xyz(ROMM_PRIMARIES, [0.96422, 1.0, 0.82521]);
+        assert_matrix_close(PROPHOTO_TO_XYZ_D50, derived, 1e-6, "PROPHOTO_TO_XYZ_D50");
+    }
+
+    #[test]
+    fn srgb_matrix_matches_primaries() {
+        let derived = invert_f64(derive_rgb_to_xyz(SRGB_PRIMARIES, [0.95047, 1.0, 1.08883]));
+        assert_matrix_close(XYZ_D65_TO_SRGB, derived, 1e-5, "XYZ_D65_TO_SRGB");
+    }
+
+    #[test]
+    fn bradford_adaptation_matches_published() {
+        let m = bradford_adaptation(WHITE_D50, WHITE_D65);
+        assert_matrix_close(m, BRADFORD_D50_TO_D65, 1e-5, "Bradford D50->D65");
+    }
+
+    #[test]
     fn prophoto_white_is_d50() {
-        let white = apply(&PROPHOTO_TO_XYZ_D50, [1.0, 1.0, 1.0]);
-        assert_close(white, WHITE_D50, 1e-4, "ProPhoto (1,1,1)");
+        assert_close(apply(&PROPHOTO_TO_XYZ_D50, [1.0; 3]), WHITE_D50, 1e-4, "ProPhoto white");
+    }
+
+    #[test]
+    fn prophoto_white_maps_to_srgb_white() {
+        assert_close(apply(&prophoto_to_srgb(), [1.0; 3]), [1.0; 3], 2e-3, "white");
     }
 
     #[test]
@@ -155,14 +265,53 @@ mod tests {
     }
 
     #[test]
-    fn prophoto_white_maps_to_srgb_white() {
-        let m = prophoto_to_srgb();
-        assert_close(apply(&m, [1.0, 1.0, 1.0]), [1.0, 1.0, 1.0], 2e-3, "white");
+    fn invert_rejects_ill_conditioned() {
+        let near_singular: Mat3 = [
+            [0.5, 0.3, 0.2],
+            [0.25, 0.15, 0.60],
+            [0.5000001, 0.3, 0.1999999],
+        ];
+        assert!(invert(&near_singular).is_none(), "guard let a near-singular matrix through");
     }
 
     #[test]
-    fn luma_weights_sum_to_one() {
-        let sum: f32 = PROPHOTO_LUMA.iter().sum();
-        assert!((sum - 1.0).abs() < 1e-4, "luma weights summed to {sum}");
+    fn prophoto_luma_is_the_y_row() {
+        let derived = derive_rgb_to_xyz(ROMM_PRIMARIES, [0.96422, 1.0, 0.82521]);
+        for c in 0..3 {
+            let diff = (PROPHOTO_LUMA[c] as f64 - derived[1][c]).abs();
+            assert!(diff < 1e-6, "PROPHOTO_LUMA[{c}] was {} (diff {diff:.3e})", PROPHOTO_LUMA[c]);
+        }
+    }
+
+    #[test]
+    fn cam_to_prophoto_is_identity_when_camera_is_prophoto() {
+        let xyz2cam = invert(&PROPHOTO_TO_XYZ_D50).unwrap();
+        let m = cam_to_prophoto(xyz2cam).unwrap();
+        for i in 0..3 {
+            for j in 0..3 {
+                let expected = if i == j { 1.0 } else { 0.0 };
+                assert!(
+                    (m[i][j] - expected).abs() < 1e-4,
+                    "[{i}][{j}] was {}, expected {expected}",
+                    m[i][j]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn cam_to_prophoto_pins_neutral_to_white() {
+        let xyz2cam: Mat3 = [
+            [0.7034, -0.1662, -0.0499],
+            [-0.5607, 1.3411, 0.2450],
+            [-0.1163, 0.2355, 0.6446],
+        ];
+        let m = cam_to_prophoto(xyz2cam).unwrap();
+        assert_close(apply(&m, [1.0; 3]), [1.0; 3], 1e-4, "camera neutral");
+    }
+
+    #[test]
+    fn cam_to_prophoto_rejects_degenerate_matrix() {
+        assert!(cam_to_prophoto([[0.0; 3]; 3]).is_none());
     }
 }
