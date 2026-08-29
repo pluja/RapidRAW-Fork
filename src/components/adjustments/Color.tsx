@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Pipette, Sliders, SquareDashedMousePointer } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
+import GroupVisibilityToggle from '../ui/GroupVisibilityToggle';
 import Slider from '../ui/Slider';
 import ColorWheel from '../ui/ColorWheel';
 import { ColorAdjustment, ColorCalibration, HueSatLum, INITIAL_ADJUSTMENTS } from '../../utils/adjustments';
@@ -443,6 +444,19 @@ export default function ColorPanel({
   // pipeline stores them in.
   const activeColorIndex = HSL_COLORS.findIndex(({ name }) => name === activeColor);
 
+  // Groups are addressed by a dotted name so the backend can tell that a panel
+  // outranks the groups inside it.
+  const groupVisibility = adjustments?.sectionVisibility || {};
+  const isGroupVisible = (group: string) => groupVisibility[`color.${group}`] !== false;
+  const toggleGroup = (group: string) =>
+    setAdjustments((prev: Adjustments) => ({
+      ...prev,
+      sectionVisibility: {
+        ...(prev.sectionVisibility || {}),
+        [`color.${group}`]: !isGroupVisible(group),
+      },
+    }));
+
   // Depends on the live value, not only on the toggle, because loading an image
   // rebuilds the adjustments from a whitelist and saving one strips this out.
   // Without that the view could be switched on and then silently lose its
@@ -499,19 +513,25 @@ export default function ColorPanel({
   return (
     <div className="space-y-2">
       <div className="p-2 bg-bg-tertiary rounded-md">
-        <div className="flex justify-between items-center mb-2">
+        <div className="group/group flex justify-between items-center mb-2">
           <Text variant={TextVariants.heading}>{t('adjustments.color.whiteBalance')}</Text>
-          {!isForMask && toggleWbPicker && (
-            <button
-              onClick={toggleWbPicker}
-              className={`p-1.5 rounded-md transition-colors ${
-                isWbPickerActive ? 'bg-accent text-button-text' : 'hover:bg-bg-secondary text-text-secondary'
-              }`}
-              data-tooltip={t('adjustments.color.wbPickerTooltip')}
-            >
-              <Pipette size={16} />
-            </button>
-          )}
+          <div className="flex items-center gap-1">
+            <GroupVisibilityToggle
+              isVisible={isGroupVisible('whiteBalance')}
+              onToggle={() => toggleGroup('whiteBalance')}
+            />
+            {!isForMask && toggleWbPicker && (
+              <button
+                onClick={toggleWbPicker}
+                className={`p-1.5 rounded-md transition-colors ${
+                  isWbPickerActive ? 'bg-accent text-button-text' : 'hover:bg-bg-secondary text-text-secondary'
+                }`}
+                data-tooltip={t('adjustments.color.wbPickerTooltip')}
+              >
+                <Pipette size={16} />
+              </button>
+            )}
+          </div>
         </div>
         <Slider
           label={t('adjustments.color.temperature')}
@@ -536,9 +556,10 @@ export default function ColorPanel({
       </div>
 
       <div className="p-2 bg-bg-tertiary rounded-md">
-        <Text variant={TextVariants.heading} className="mb-2">
-          {t('adjustments.color.presence')}
-        </Text>
+        <div className="group/group flex justify-between items-center mb-2">
+          <Text variant={TextVariants.heading}>{t('adjustments.color.presence')}</Text>
+          <GroupVisibilityToggle isVisible={isGroupVisible('presence')} onToggle={() => toggleGroup('presence')} />
+        </div>
         <Slider
           label={t('adjustments.color.vibrance')}
           max={100}
@@ -560,9 +581,12 @@ export default function ColorPanel({
       </div>
 
       <div className="p-2 bg-bg-tertiary rounded-md">
-        <Text variant={TextVariants.heading} className="mb-2">
-          {isForMask ? t('adjustments.color.localHue') : t('adjustments.color.hue')}
-        </Text>
+        <div className="group/group flex justify-between items-center mb-2">
+          <Text variant={TextVariants.heading}>
+            {isForMask ? t('adjustments.color.localHue') : t('adjustments.color.hue')}
+          </Text>
+          <GroupVisibilityToggle isVisible={isGroupVisible('hue')} onToggle={() => toggleGroup('hue')} />
+        </div>
         <Slider
           label={t('adjustments.color.hue')}
           max={180}

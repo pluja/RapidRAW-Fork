@@ -2104,18 +2104,31 @@ pub fn is_image_edited(
     bytemuck::bytes_of(&current_adj) != bytemuck::bytes_of(&default_adj)
 }
 
+/// Whether a group of adjustments is switched on.
+///
+/// A dotted name is nested: "color.whiteBalance" needs both the panel and the
+/// group inside it, so switching off a panel hides everything under it whatever
+/// its groups say, and switching it back on restores them as they were.
+fn section_is_visible(visibility: Option<&serde_json::Value>, section: &str) -> bool {
+    let switched_on = |name: &str| {
+        visibility
+            .and_then(|v| v.get(name))
+            .and_then(|s| s.as_bool())
+            .unwrap_or(true)
+    };
+    match section.split_once('.') {
+        Some((panel, _)) => switched_on(panel) && switched_on(section),
+        None => switched_on(section),
+    }
+}
+
 fn get_global_adjustments_from_json(
     js_adjustments: &serde_json::Value,
     is_raw: bool,
     tonemapper_override: Option<u32>,
 ) -> GlobalAdjustments {
     let visibility = js_adjustments.get("sectionVisibility");
-    let is_visible = |section: &str| -> bool {
-        visibility
-            .and_then(|v| v.get(section))
-            .and_then(|s| s.as_bool())
-            .unwrap_or(true)
-    };
+    let is_visible = |section: &str| -> bool { section_is_visible(visibility, section) };
 
     let get_val = |section: &str, key: &str, scale: f32, default: Option<f64>| -> f32 {
         if is_visible(section) {
@@ -2241,11 +2254,16 @@ fn get_global_adjustments_from_json(
         whites: get_val("basic", "whites", SCALES.whites, None),
         blacks: get_val("basic", "blacks", SCALES.blacks, None),
 
-        saturation: get_val("color", "saturation", SCALES.saturation, None),
-        temperature: get_val("color", "temperature", SCALES.temperature, None),
-        tint: get_val("color", "tint", SCALES.tint, None),
-        vibrance: get_val("color", "vibrance", SCALES.vibrance, None),
-        hue: get_val("color", "hue", 1.0, None),
+        saturation: get_val("color.presence", "saturation", SCALES.saturation, None),
+        temperature: get_val(
+            "color.whiteBalance",
+            "temperature",
+            SCALES.temperature,
+            None,
+        ),
+        tint: get_val("color.whiteBalance", "tint", SCALES.tint, None),
+        vibrance: get_val("color.presence", "vibrance", SCALES.vibrance, None),
+        hue: get_val("color.hue", "hue", 1.0, None),
         // A view mode rather than an adjustment, so section visibility does
         // not gate it.
         color_mixer_preview: js_adjustments
@@ -2412,12 +2430,7 @@ fn get_mask_adjustments_from_json(adj: &serde_json::Value) -> MaskAdjustments {
     }
 
     let visibility = adj.get("sectionVisibility");
-    let is_visible = |section: &str| -> bool {
-        visibility
-            .and_then(|v| v.get(section))
-            .and_then(|s| s.as_bool())
-            .unwrap_or(true)
-    };
+    let is_visible = |section: &str| -> bool { section_is_visible(visibility, section) };
 
     let get_val = |section: &str, key: &str, scale: f32| -> f32 {
         if is_visible(section) {
@@ -2459,10 +2472,10 @@ fn get_mask_adjustments_from_json(adj: &serde_json::Value) -> MaskAdjustments {
         whites: get_val("basic", "whites", SCALES.whites),
         blacks: get_val("basic", "blacks", SCALES.blacks),
 
-        saturation: get_val("color", "saturation", SCALES.saturation),
-        temperature: get_val("color", "temperature", SCALES.temperature),
-        tint: get_val("color", "tint", SCALES.tint),
-        vibrance: get_val("color", "vibrance", SCALES.vibrance),
+        saturation: get_val("color.presence", "saturation", SCALES.saturation),
+        temperature: get_val("color.whiteBalance", "temperature", SCALES.temperature),
+        tint: get_val("color.whiteBalance", "tint", SCALES.tint),
+        vibrance: get_val("color.presence", "vibrance", SCALES.vibrance),
 
         sharpness: get_val("details", "sharpness", SCALES.sharpness),
         luma_noise_reduction: get_val("details", "lumaNoiseReduction", SCALES.luma_noise_reduction),
@@ -2481,7 +2494,7 @@ fn get_mask_adjustments_from_json(adj: &serde_json::Value) -> MaskAdjustments {
         flare_amount: get_val("effects", "flareAmount", SCALES.flares),
         sharpness_threshold: get_val("details", "sharpnessThreshold", SCALES.sharpness_threshold),
 
-        hue: get_val("color", "hue", 1.0),
+        hue: get_val("color.hue", "hue", 1.0),
         _pad_cg1: 0.0,
         _pad_cg2: 0.0,
         color_grading_shadows: if is_visible("color") {
@@ -3515,6 +3528,38 @@ pub fn calculate_auto_adjustments(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Switching off a panel has to hide the groups inside it whatever those
+    /// groups say, and switching it back on has to restore them as they were.
+    #[test]
+    fn a_panel_outranks_the_groups_inside_it() {
+        let visible = |json: serde_json::Value, section: &str| {
+            section_is_visible(json.get("sectionVisibility"), section)
+        };
+
+        let nothing_set = serde_json::json!({});
+        assert!(
+            visible(nothing_set, "color.whiteBalance"),
+            "unset should mean on"
+        );
+
+        let group_off = serde_json::json!({
+            "sectionVisibility": { "color": true, "color.whiteBalance": false }
+        });
+        assert!(!visible(group_off.clone(), "color.whiteBalance"));
+        assert!(
+            visible(group_off, "color.presence"),
+            "one group off is not another"
+        );
+
+        let panel_off = serde_json::json!({
+            "sectionVisibility": { "color": false, "color.whiteBalance": true }
+        });
+        assert!(
+            !visible(panel_off, "color.whiteBalance"),
+            "the panel should outrank a group that is still switched on"
+        );
+    }
 
     /// The colour band whose selection is being shown is a view mode, so it is
     /// read straight from the payload rather than through the gate that section
