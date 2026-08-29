@@ -23,6 +23,7 @@ mod file_management;
 mod focus_stacking;
 mod formats;
 mod gpu_processing;
+mod grain;
 mod hdr_deghosting;
 mod image_loader;
 mod image_processing;

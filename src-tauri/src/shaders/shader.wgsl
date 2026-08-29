@@ -359,25 +359,45 @@ fn hash(p: vec2<f32>) -> f32 {
     return fract((p3.x + p3.y) * p3.z);
 }
 
-fn gradient_noise(p: vec2<f32>) -> f32 {
+/// One random value per cell, smoothly interpolated.
+///
+/// The gradient noise this replaces evaluated to exactly zero at every integer
+/// coordinate, which left a regular grid of grain-free pixels across the frame.
+/// Interpolating values rather than gradients has no such structure.
+/// Scales the slider so its range lands where the previous grain did.
+const GRAIN_STRENGTH: f32 = 0.5;
+
+/// How much each dye layer's grain differs from the others. All the way to one
+/// reads as colour noise rather than grain.
+const GRAIN_LAYER_INDEPENDENCE: f32 = 0.30;
+
+fn value_noise(p: vec2<f32>) -> f32 {
     let i = floor(p);
     let f = fract(p);
-    let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    let u = f * f * (3.0 - 2.0 * f);
+    let a = hash(i);
+    let b = hash(i + vec2<f32>(1.0, 0.0));
+    let c = hash(i + vec2<f32>(0.0, 1.0));
+    let d = hash(i + vec2<f32>(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y) * 2.0 - 1.0;
+}
 
-    let ga = vec2<f32>(hash(i + vec2(0.0, 0.0)), hash(i + vec2(0.0, 0.0) + vec2(11.0, 37.0))) * 2.0 - 1.0;
-    let gb = vec2<f32>(hash(i + vec2(1.0, 0.0)), hash(i + vec2(1.0, 0.0) + vec2(11.0, 37.0))) * 2.0 - 1.0;
-    let gc = vec2<f32>(hash(i + vec2(0.0, 1.0)), hash(i + vec2(0.0, 1.0) + vec2(11.0, 37.0))) * 2.0 - 1.0;
-    let gd = vec2<f32>(hash(i + vec2(1.0, 1.0)), hash(i + vec2(1.0, 1.0) + vec2(11.0, 37.0))) * 2.0 - 1.0;
+/// Grain crystals scatter as a Poisson process and are then filtered by the
+/// film and the scanner, so the texture carries a broad band of frequencies
+/// rather than the single one a lattice noise gives. Octaves are summed to
+/// approximate that; roughness shifts weight toward the coarser ones instead of
+/// trading the finer ones away, which is what a crossfade did.
+fn grain_noise(p: vec2<f32>, roughness: f32) -> f32 {
+    let fine = value_noise(p * 2.0 + vec2<f32>(7.1, 31.7));
+    let mid = value_noise(p);
+    let coarse = value_noise(p * 0.5 + vec2<f32>(19.7, 4.3));
 
-    let dot_00 = dot(ga, f - vec2(0.0, 0.0));
-    let dot_10 = dot(gb, f - vec2(1.0, 0.0));
-    let dot_01 = dot(gc, f - vec2(0.0, 1.0));
-    let dot_11 = dot(gd, f - vec2(1.0, 1.0));
+    let w_fine = mix(0.55, 0.20, roughness);
+    let w_mid = 1.0;
+    let w_coarse = mix(0.25, 0.85, roughness);
 
-    let bottom_interp = mix(dot_00, dot_10, u.x);
-    let top_interp = mix(dot_01, dot_11, u.x);
-
-    return mix(bottom_interp, top_interp, u.y);
+    let total = sqrt(w_fine * w_fine + w_mid * w_mid + w_coarse * w_coarse);
+    return (fine * w_fine + mid * w_mid + coarse * w_coarse) / total;
 }
 
 fn dither(coords: vec2<u32>) -> f32 {
@@ -2233,17 +2253,31 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
     if (adjustments.global.grain_amount > 0.0) {
         let coord = vec2<f32>(absolute_coord_i);
-        let amount = adjustments.global.grain_amount * 0.5;
+        let amount = adjustments.global.grain_amount * GRAIN_STRENGTH;
         let grain_frequency = (1.0 / max(adjustments.global.grain_size, 0.1)) / scale;
         let roughness = adjustments.global.grain_roughness;
-        let luma = max(0.0, get_display_luma(final_rgb));
-        let luma_mask = smoothstep(0.0, 0.15, luma) * (1.0 - smoothstep(0.6, 1.0, luma));
         let base_coord = coord * grain_frequency;
-        let rough_coord = coord * grain_frequency * 0.6;
-        let noise_base = gradient_noise(base_coord);
-        let noise_rough = gradient_noise(rough_coord + vec2<f32>(5.2, 1.3));
-        let noise_val = mix(noise_base, noise_rough, roughness);
-        final_rgb += vec3<f32>(noise_val) * amount * luma_mask;
+
+        // A crystal either developed or it did not, so the count under a pixel
+        // is binomial and its spread follows the square root of density times
+        // its complement: none where the emulsion is clear, none where it is
+        // fully developed, most in between. This is the shape the physics gives,
+        // in place of a mask drawn by hand.
+        let density = clamp(get_display_luma(final_rgb), 0.0, 1.0);
+        let spread = sqrt(max(density * (1.0 - density), 0.0)) * 2.0;
+
+        // Colour negative carries three dye layers, each with its own grain, so
+        // real colour grain is not the same value on every channel. Sharing most
+        // of it keeps the texture reading as grain rather than as chroma noise.
+        let per_layer = vec3<f32>(
+            grain_noise(base_coord, roughness),
+            grain_noise(base_coord + vec2<f32>(53.7, 11.3), roughness),
+            grain_noise(base_coord + vec2<f32>(97.1, 61.9), roughness)
+        );
+        let layer_mean = (per_layer.r + per_layer.g + per_layer.b) / 3.0;
+        let noise_rgb = mix(vec3<f32>(layer_mean), per_layer, GRAIN_LAYER_INDEPENDENCE);
+
+        final_rgb += noise_rgb * amount * spread;
     }
 
     if (adjustments.global.show_clipping == 1u) {
