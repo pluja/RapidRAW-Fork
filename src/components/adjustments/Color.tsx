@@ -3,6 +3,7 @@ import { Pipette, Sliders, SquareDashedMousePointer } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import GroupVisibilityToggle from '../ui/GroupVisibilityToggle';
+import { useGroupVisibility } from '../../hooks/useGroupVisibility';
 import Slider from '../ui/Slider';
 import ColorWheel from '../ui/ColorWheel';
 import { ColorAdjustment, ColorCalibration, HueSatLum, INITIAL_ADJUSTMENTS } from '../../utils/adjustments';
@@ -289,6 +290,7 @@ const ColorGradingPanel = ({ adjustments, setAdjustments, onDragStateChange }: C
 };
 
 const ColorCalibrationPanel = ({ adjustments, setAdjustments, onDragStateChange }: ColorPanelProps) => {
+  const groups = useGroupVisibility('color', adjustments, setAdjustments);
   const { t } = useTranslation();
   const [activePrimary, setActivePrimary] = useState('red');
   const colorCalibration = adjustments.colorCalibration || INITIAL_ADJUSTMENTS.colorCalibration;
@@ -332,9 +334,13 @@ const ColorCalibrationPanel = ({ adjustments, setAdjustments, onDragStateChange 
 
   return (
     <div className="p-2 bg-bg-tertiary rounded-md mt-4">
-      <Text variant={TextVariants.heading} className="mb-2">
-        {t('adjustments.color.calibration.title')}
-      </Text>
+      <div className="group/group flex justify-between items-center mb-2">
+        <Text variant={TextVariants.heading}>{t('adjustments.color.calibration.title')}</Text>
+        <GroupVisibilityToggle
+          isVisible={groups.isVisible('calibration')}
+          onToggle={() => groups.toggle('calibration')}
+        />
+      </div>
       <div>
         <Text color={TextColors.primary} weight={TextWeights.medium} className="mb-1">
           {t('adjustments.color.calibration.shadows')}
@@ -444,18 +450,7 @@ export default function ColorPanel({
   // pipeline stores them in.
   const activeColorIndex = HSL_COLORS.findIndex(({ name }) => name === activeColor);
 
-  // Groups are addressed by a dotted name so the backend can tell that a panel
-  // outranks the groups inside it.
-  const groupVisibility = adjustments?.sectionVisibility || {};
-  const isGroupVisible = (group: string) => groupVisibility[`color.${group}`] !== false;
-  const toggleGroup = (group: string) =>
-    setAdjustments((prev: Adjustments) => ({
-      ...prev,
-      sectionVisibility: {
-        ...(prev.sectionVisibility || {}),
-        [`color.${group}`]: !isGroupVisible(group),
-      },
-    }));
+  const groups = useGroupVisibility('color', adjustments, setAdjustments);
 
   // Depends on the live value, not only on the toggle, because loading an image
   // rebuilds the adjustments from a whitelist and saving one strips this out.
@@ -517,8 +512,8 @@ export default function ColorPanel({
           <Text variant={TextVariants.heading}>{t('adjustments.color.whiteBalance')}</Text>
           <div className="flex items-center gap-1">
             <GroupVisibilityToggle
-              isVisible={isGroupVisible('whiteBalance')}
-              onToggle={() => toggleGroup('whiteBalance')}
+              isVisible={groups.isVisible('whiteBalance')}
+              onToggle={() => groups.toggle('whiteBalance')}
             />
             {!isForMask && toggleWbPicker && (
               <button
@@ -558,7 +553,7 @@ export default function ColorPanel({
       <div className="p-2 bg-bg-tertiary rounded-md">
         <div className="group/group flex justify-between items-center mb-2">
           <Text variant={TextVariants.heading}>{t('adjustments.color.presence')}</Text>
-          <GroupVisibilityToggle isVisible={isGroupVisible('presence')} onToggle={() => toggleGroup('presence')} />
+          <GroupVisibilityToggle isVisible={groups.isVisible('presence')} onToggle={() => groups.toggle('presence')} />
         </div>
         <Slider
           label={t('adjustments.color.vibrance')}
@@ -585,7 +580,7 @@ export default function ColorPanel({
           <Text variant={TextVariants.heading}>
             {isForMask ? t('adjustments.color.localHue') : t('adjustments.color.hue')}
           </Text>
-          <GroupVisibilityToggle isVisible={isGroupVisible('hue')} onToggle={() => toggleGroup('hue')} />
+          <GroupVisibilityToggle isVisible={groups.isVisible('hue')} onToggle={() => groups.toggle('hue')} />
         </div>
         <Slider
           label={t('adjustments.color.hue')}
@@ -600,9 +595,10 @@ export default function ColorPanel({
       </div>
 
       <div className="p-2 bg-bg-tertiary rounded-md">
-        <Text variant={TextVariants.heading} className="mb-2">
-          {t('adjustments.color.colorGrading')}
-        </Text>
+        <div className="group/group flex justify-between items-center mb-2">
+          <Text variant={TextVariants.heading}>{t('adjustments.color.colorGrading')}</Text>
+          <GroupVisibilityToggle isVisible={groups.isVisible('grading')} onToggle={() => groups.toggle('grading')} />
+        </div>
         <ColorGradingPanel
           adjustments={adjustments}
           setAdjustments={setAdjustments}
@@ -612,19 +608,22 @@ export default function ColorPanel({
       </div>
 
       <div className="p-2 bg-bg-tertiary rounded-md">
-        <div className="flex items-center justify-between mb-2">
+        <div className="group/group flex items-center justify-between mb-2">
           <Text variant={TextVariants.heading}>{t('adjustments.color.colorMixer')}</Text>
-          <button
-            type="button"
-            aria-pressed={isShowingSelection}
-            onClick={() => setIsShowingSelection((shown: boolean) => !shown)}
-            data-tooltip={t('adjustments.color.showSelectionTooltip')}
-            className={`p-1 rounded-md transition-colors ${
-              isShowingSelection ? 'bg-accent/25 text-text-primary' : 'text-text-secondary hover:text-text-primary'
-            }`}
-          >
-            <SquareDashedMousePointer size={16} />
-          </button>
+          <div className="flex items-center gap-1">
+            <GroupVisibilityToggle isVisible={groups.isVisible('mixer')} onToggle={() => groups.toggle('mixer')} />
+            <button
+              type="button"
+              aria-pressed={isShowingSelection}
+              onClick={() => setIsShowingSelection((shown: boolean) => !shown)}
+              data-tooltip={t('adjustments.color.showSelectionTooltip')}
+              className={`p-1 rounded-md transition-colors ${
+                isShowingSelection ? 'bg-accent/25 text-text-primary' : 'text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              <SquareDashedMousePointer size={16} />
+            </button>
+          </div>
         </div>
         <div className="flex justify-between mb-4 px-1">
           {HSL_COLORS.map(({ name, color, label }) => (

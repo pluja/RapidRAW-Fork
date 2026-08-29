@@ -5,6 +5,8 @@ import { toast } from 'react-toastify';
 import { Loader2, Circle, Hexagon, Octagon, Aperture } from 'lucide-react';
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
+import GroupVisibilityToggle from '../ui/GroupVisibilityToggle';
+import { useGroupVisibility } from '../../hooks/useGroupVisibility';
 import Slider from '../ui/Slider';
 import Switch from '../ui/Switch';
 import { Adjustments, Effect, CreativeAdjustment } from '../../utils/adjustments';
@@ -145,6 +147,7 @@ export default function EffectsPanel({
   appSettings,
   onDragStateChange,
 }: EffectsPanelProps) {
+  const groups = useGroupVisibility('effects', adjustments, setAdjustments);
   const { t } = useTranslation();
   const [isGeneratingDepth, setIsGeneratingDepth] = useState(false);
   const aiModelDownloadStatus = useProcessStore((state) => state.aiModelDownloadStatus);
@@ -198,9 +201,10 @@ export default function EffectsPanel({
   return (
     <div className="space-y-2">
       <div className="p-2 bg-bg-tertiary rounded-md">
-        <Text variant={TextVariants.heading} className="mb-2">
-          {t('adjustments.effects.creative')}
-        </Text>
+        <div className="group/group flex justify-between items-center mb-2">
+          <Text variant={TextVariants.heading}>{t('adjustments.effects.creative')}</Text>
+          <GroupVisibilityToggle isVisible={groups.isVisible('creative')} onToggle={() => groups.toggle('creative')} />
+        </div>
 
         <Slider
           label={t('adjustments.effects.glow')}
@@ -336,9 +340,10 @@ export default function EffectsPanel({
           </div>
 
           <div className="p-2 bg-bg-tertiary rounded-md">
-            <Text variant={TextVariants.heading} className="mb-2">
-              {t('adjustments.effects.lut')}
-            </Text>
+            <div className="group/group flex justify-between items-center mb-2">
+              <Text variant={TextVariants.heading}>{t('adjustments.effects.lut')}</Text>
+              <GroupVisibilityToggle isVisible={groups.isVisible('lut')} onToggle={() => groups.toggle('lut')} />
+            </div>
             <LUTControl
               lutPath={adjustments.lutPath || null}
               lutName={adjustments.lutName || null}
@@ -353,9 +358,13 @@ export default function EffectsPanel({
 
           {adjustmentVisibility.vignette !== false && (
             <div className="p-2 bg-bg-tertiary rounded-md">
-              <Text variant={TextVariants.heading} className="mb-2">
-                {t('adjustments.effects.vignette')}
-              </Text>
+              <div className="group/group flex justify-between items-center mb-2">
+                <Text variant={TextVariants.heading}>{t('adjustments.effects.vignette')}</Text>
+                <GroupVisibilityToggle
+                  isVisible={groups.isVisible('vignette')}
+                  onToggle={() => groups.toggle('vignette')}
+                />
+              </div>
               <Slider
                 label={t('adjustments.effects.amount')}
                 max={100}
@@ -401,9 +410,10 @@ export default function EffectsPanel({
 
           {adjustmentVisibility.grain !== false && (
             <div className="p-2 bg-bg-tertiary rounded-md">
-              <Text variant={TextVariants.heading} className="mb-2">
-                {t('adjustments.effects.grain')}
-              </Text>
+              <div className="group/group flex justify-between items-center mb-2">
+                <Text variant={TextVariants.heading}>{t('adjustments.effects.grain')}</Text>
+                <GroupVisibilityToggle isVisible={groups.isVisible('grain')} onToggle={() => groups.toggle('grain')} />
+              </div>
               <Slider
                 label={t('adjustments.effects.amount')}
                 max={100}

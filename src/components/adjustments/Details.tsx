@@ -1,4 +1,6 @@
 import { useTranslation } from 'react-i18next';
+import GroupVisibilityToggle from '../ui/GroupVisibilityToggle';
+import { useGroupVisibility } from '../../hooks/useGroupVisibility';
 import Slider from '../ui/Slider';
 import { Adjustments, DetailsAdjustment } from '../../utils/adjustments';
 import { AppSettings } from '../ui/AppProperties';
@@ -20,6 +22,7 @@ export default function DetailsPanel({
   isForMask = false,
   onDragStateChange,
 }: DetailsPanelProps) {
+  const groups = useGroupVisibility('details', adjustments, setAdjustments);
   const { t } = useTranslation();
 
   const handleAdjustmentChange = (key: string, value: string) => {
@@ -33,9 +36,13 @@ export default function DetailsPanel({
     <div className="space-y-2">
       {adjustmentVisibility.sharpening !== false && (
         <div className="p-2 bg-bg-tertiary rounded-md">
-          <Text variant={TextVariants.heading} className="mb-2">
-            {t('adjustments.details.sharpening')}
-          </Text>
+          <div className="group/group flex justify-between items-center mb-2">
+            <Text variant={TextVariants.heading}>{t('adjustments.details.sharpening')}</Text>
+            <GroupVisibilityToggle
+              isVisible={groups.isVisible('sharpening')}
+              onToggle={() => groups.toggle('sharpening')}
+            />
+          </div>
           <Slider
             label={t('adjustments.details.sharpness')}
             max={100}
@@ -61,9 +68,13 @@ export default function DetailsPanel({
 
       {adjustmentVisibility.presence !== false && (
         <div className="p-2 bg-bg-tertiary rounded-md">
-          <Text variant={TextVariants.heading} className="mb-2">
-            {t('adjustments.details.presence')}
-          </Text>
+          <div className="group/group flex justify-between items-center mb-2">
+            <Text variant={TextVariants.heading}>{t('adjustments.details.presence')}</Text>
+            <GroupVisibilityToggle
+              isVisible={groups.isVisible('presence')}
+              onToggle={() => groups.toggle('presence')}
+            />
+          </div>
           <Slider
             label={t('adjustments.details.clarity')}
             max={100}
@@ -107,9 +118,13 @@ export default function DetailsPanel({
 
       {adjustmentVisibility.noiseReduction !== false && (
         <div className="p-2 bg-bg-tertiary rounded-md">
-          <Text variant={TextVariants.heading} className="mb-2">
-            {t('adjustments.details.noiseReduction')}
-          </Text>
+          <div className="group/group flex justify-between items-center mb-2">
+            <Text variant={TextVariants.heading}>{t('adjustments.details.noiseReduction')}</Text>
+            <GroupVisibilityToggle
+              isVisible={groups.isVisible('noiseReduction')}
+              onToggle={() => groups.toggle('noiseReduction')}
+            />
+          </div>
           <Slider
             label={t('adjustments.details.luminance')}
             max={100}
@@ -133,9 +148,13 @@ export default function DetailsPanel({
 
       {!isForMask && adjustmentVisibility.chromaticAberration !== false && (
         <div className="p-2 bg-bg-tertiary rounded-md">
-          <Text variant={TextVariants.heading} className="mb-2">
-            {t('adjustments.details.chromaticAberration')}
-          </Text>
+          <div className="group/group flex justify-between items-center mb-2">
+            <Text variant={TextVariants.heading}>{t('adjustments.details.chromaticAberration')}</Text>
+            <GroupVisibilityToggle
+              isVisible={groups.isVisible('chromaticAberration')}
+              onToggle={() => groups.toggle('chromaticAberration')}
+            />
+          </div>
           <Slider
             label={t('adjustments.details.redCyan')}
             max={100}

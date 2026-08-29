@@ -2199,7 +2199,7 @@ fn get_global_adjustments_from_json(
         .cloned()
         .unwrap_or_default();
 
-    let color_cal_settings = if is_visible("color") {
+    let color_cal_settings = if is_visible("color.calibration") {
         ColorCalibrationSettings {
             shadows_tint: cal_obj["shadowsTint"].as_f64().unwrap_or(0.0) as f32
                 / SCALES.color_calibration_hue,
@@ -2224,7 +2224,7 @@ fn get_global_adjustments_from_json(
     let tone_mapper = js_adjustments["toneMapper"].as_str().unwrap_or("basic");
     let (pipe_to_rendering, rendering_to_pipe) = calculate_agx_matrices();
 
-    let (has_lut, lut_intensity, lut_is_scene_referred) = if is_visible("effects") {
+    let (has_lut, lut_intensity, lut_is_scene_referred) = if is_visible("effects.lut") {
         (
             if js_adjustments["lutPath"].is_string() {
                 1
@@ -2273,60 +2273,60 @@ fn get_global_adjustments_from_json(
         _pad_color2: 0.0,
         _pad_color3: 0.0,
 
-        sharpness: get_val("details", "sharpness", SCALES.sharpness, None),
+        sharpness: get_val("details.sharpening", "sharpness", SCALES.sharpness, None),
         luma_noise_reduction: get_val(
-            "details",
+            "details.noiseReduction",
             "lumaNoiseReduction",
             SCALES.luma_noise_reduction,
             None,
         ),
         color_noise_reduction: get_val(
-            "details",
+            "details.noiseReduction",
             "colorNoiseReduction",
             SCALES.color_noise_reduction,
             None,
         ),
 
-        clarity: get_val("details", "clarity", SCALES.clarity, None),
-        dehaze: get_val("details", "dehaze", SCALES.dehaze, None),
-        structure: get_val("details", "structure", SCALES.structure, None),
-        centré: get_val("details", "centré", SCALES.centré, None),
-        vignette_amount: get_val("effects", "vignetteAmount", SCALES.vignette_amount, None),
+        clarity: get_val("details.presence", "clarity", SCALES.clarity, None),
+        dehaze: get_val("details.presence", "dehaze", SCALES.dehaze, None),
+        structure: get_val("details.presence", "structure", SCALES.structure, None),
+        centré: get_val("details.presence", "centré", SCALES.centré, None),
+        vignette_amount: get_val("effects.vignette", "vignetteAmount", SCALES.vignette_amount, None),
         vignette_midpoint: get_val(
-            "effects",
+            "effects.vignette",
             "vignetteMidpoint",
             SCALES.vignette_midpoint,
             Some(50.0),
         ),
         vignette_roundness: get_val(
-            "effects",
+            "effects.vignette",
             "vignetteRoundness",
             SCALES.vignette_roundness,
             Some(0.0),
         ),
         vignette_feather: get_val(
-            "effects",
+            "effects.vignette",
             "vignetteFeather",
             SCALES.vignette_feather,
             Some(50.0),
         ),
-        grain_amount: get_val("effects", "grainAmount", SCALES.grain_amount, None),
-        grain_size: get_val("effects", "grainSize", SCALES.grain_size, Some(25.0)),
+        grain_amount: get_val("effects.grain", "grainAmount", SCALES.grain_amount, None),
+        grain_size: get_val("effects.grain", "grainSize", SCALES.grain_size, Some(25.0)),
         grain_roughness: get_val(
-            "effects",
+            "effects.grain",
             "grainRoughness",
             SCALES.grain_roughness,
             Some(50.0),
         ),
 
         chromatic_aberration_red_cyan: get_val(
-            "details",
+            "details.chromaticAberration",
             "chromaticAberrationRedCyan",
             SCALES.chromatic_aberration,
             None,
         ),
         chromatic_aberration_blue_yellow: get_val(
-            "details",
+            "details.chromaticAberration",
             "chromaticAberrationBlueYellow",
             SCALES.chromatic_aberration,
             None,
@@ -2359,32 +2359,32 @@ fn get_global_adjustments_from_json(
         _pad_cg2: 0.0,
         _pad_cg3: 0.0,
         _pad_cg4: 0.0,
-        color_grading_shadows: if is_visible("color") {
+        color_grading_shadows: if is_visible("color.grading") {
             parse_color_grade_settings(&cg_obj["shadows"])
         } else {
             ColorGradeSettings::default()
         },
-        color_grading_midtones: if is_visible("color") {
+        color_grading_midtones: if is_visible("color.grading") {
             parse_color_grade_settings(&cg_obj["midtones"])
         } else {
             ColorGradeSettings::default()
         },
-        color_grading_highlights: if is_visible("color") {
+        color_grading_highlights: if is_visible("color.grading") {
             parse_color_grade_settings(&cg_obj["highlights"])
         } else {
             ColorGradeSettings::default()
         },
-        color_grading_global: if is_visible("color") {
+        color_grading_global: if is_visible("color.grading") {
             parse_color_grade_settings(&cg_obj["global"])
         } else {
             ColorGradeSettings::default()
         },
-        color_grading_blending: if is_visible("color") {
+        color_grading_blending: if is_visible("color.grading") {
             cg_obj["blending"].as_f64().unwrap_or(50.0) as f32 / SCALES.color_grading_blending
         } else {
             0.5
         },
-        color_grading_balance: if is_visible("color") {
+        color_grading_balance: if is_visible("color.grading") {
             cg_obj["balance"].as_f64().unwrap_or(0.0) as f32 / SCALES.color_grading_balance
         } else {
             0.0
@@ -2394,7 +2394,7 @@ fn get_global_adjustments_from_json(
 
         color_calibration: color_cal_settings,
 
-        hsl: if is_visible("color") {
+        hsl: if is_visible("color.mixer") {
             parse_hsl_adjustments(&js_adjustments.get("hsl").cloned().unwrap_or_default())
         } else {
             [HslColor::default(); 8]
@@ -2412,11 +2412,11 @@ fn get_global_adjustments_from_json(
         _pad_end3: 0.0,
         _pad_end4: 0.0,
 
-        glow_amount: get_val("effects", "glowAmount", SCALES.glow, None),
-        halation_amount: get_val("effects", "halationAmount", SCALES.halation, None),
-        flare_amount: get_val("effects", "flareAmount", SCALES.flares, None),
+        glow_amount: get_val("effects.creative", "glowAmount", SCALES.glow, None),
+        halation_amount: get_val("effects.creative", "halationAmount", SCALES.halation, None),
+        flare_amount: get_val("effects.creative", "flareAmount", SCALES.flares, None),
         sharpness_threshold: get_val(
-            "details",
+            "details.sharpening",
             "sharpnessThreshold",
             SCALES.sharpness_threshold,
             Some(15.0),
@@ -2477,52 +2477,52 @@ fn get_mask_adjustments_from_json(adj: &serde_json::Value) -> MaskAdjustments {
         tint: get_val("color.whiteBalance", "tint", SCALES.tint),
         vibrance: get_val("color.presence", "vibrance", SCALES.vibrance),
 
-        sharpness: get_val("details", "sharpness", SCALES.sharpness),
-        luma_noise_reduction: get_val("details", "lumaNoiseReduction", SCALES.luma_noise_reduction),
+        sharpness: get_val("details.sharpening", "sharpness", SCALES.sharpness),
+        luma_noise_reduction: get_val("details.noiseReduction", "lumaNoiseReduction", SCALES.luma_noise_reduction),
         color_noise_reduction: get_val(
-            "details",
+            "details.noiseReduction",
             "colorNoiseReduction",
             SCALES.color_noise_reduction,
         ),
 
-        clarity: get_val("details", "clarity", SCALES.clarity),
-        dehaze: get_val("details", "dehaze", SCALES.dehaze),
-        structure: get_val("details", "structure", SCALES.structure),
+        clarity: get_val("details.presence", "clarity", SCALES.clarity),
+        dehaze: get_val("details.presence", "dehaze", SCALES.dehaze),
+        structure: get_val("details.presence", "structure", SCALES.structure),
 
-        glow_amount: get_val("effects", "glowAmount", SCALES.glow),
-        halation_amount: get_val("effects", "halationAmount", SCALES.halation),
-        flare_amount: get_val("effects", "flareAmount", SCALES.flares),
-        sharpness_threshold: get_val("details", "sharpnessThreshold", SCALES.sharpness_threshold),
+        glow_amount: get_val("effects.creative", "glowAmount", SCALES.glow),
+        halation_amount: get_val("effects.creative", "halationAmount", SCALES.halation),
+        flare_amount: get_val("effects.creative", "flareAmount", SCALES.flares),
+        sharpness_threshold: get_val("details.sharpening", "sharpnessThreshold", SCALES.sharpness_threshold),
 
         hue: get_val("color.hue", "hue", 1.0),
         _pad_cg1: 0.0,
         _pad_cg2: 0.0,
-        color_grading_shadows: if is_visible("color") {
+        color_grading_shadows: if is_visible("color.grading") {
             parse_color_grade_settings(&cg_obj["shadows"])
         } else {
             ColorGradeSettings::default()
         },
-        color_grading_midtones: if is_visible("color") {
+        color_grading_midtones: if is_visible("color.grading") {
             parse_color_grade_settings(&cg_obj["midtones"])
         } else {
             ColorGradeSettings::default()
         },
-        color_grading_highlights: if is_visible("color") {
+        color_grading_highlights: if is_visible("color.grading") {
             parse_color_grade_settings(&cg_obj["highlights"])
         } else {
             ColorGradeSettings::default()
         },
-        color_grading_global: if is_visible("color") {
+        color_grading_global: if is_visible("color.grading") {
             parse_color_grade_settings(&cg_obj["global"])
         } else {
             ColorGradeSettings::default()
         },
-        color_grading_blending: if is_visible("color") {
+        color_grading_blending: if is_visible("color.grading") {
             cg_obj["blending"].as_f64().unwrap_or(50.0) as f32 / SCALES.color_grading_blending
         } else {
             0.5
         },
-        color_grading_balance: if is_visible("color") {
+        color_grading_balance: if is_visible("color.grading") {
             cg_obj["balance"].as_f64().unwrap_or(0.0) as f32 / SCALES.color_grading_balance
         } else {
             0.0
@@ -2530,7 +2530,7 @@ fn get_mask_adjustments_from_json(adj: &serde_json::Value) -> MaskAdjustments {
         _pad5: 0.0,
         _pad6: 0.0,
 
-        hsl: if is_visible("color") {
+        hsl: if is_visible("color.mixer") {
             parse_hsl_adjustments(&adj.get("hsl").cloned().unwrap_or_default())
         } else {
             [HslColor::default(); 8]
