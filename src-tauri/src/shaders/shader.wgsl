@@ -797,6 +797,16 @@ const OK_BAND_NEIGHBOUR_FLOOR: f32 = 0.012;
 const OK_BAND_TRUST_LOW: f32 = 0.30;
 const OK_BAND_TRUST_HIGH: f32 = 0.70;
 
+// Which band a colour belongs to is decided by direction alone, at full
+// selectivity whatever its chroma, and how much of the adjustment it takes is
+// decided separately here. Folding the two together made the share collapse
+// faster and faster as a colour approached neutral and then stop dead, which
+// drew a hard edge across the smooth part of a sky passing from blue to warm.
+// Kept apart, the fade through neutral has the shape of a smoothstep, easing
+// out at both ends instead of falling off a cliff.
+const OK_BAND_CONFIDENCE_LOW: f32 = 0.002;
+const OK_BAND_CONFIDENCE_HIGH: f32 = 0.06;
+
 /// Cube root that keeps its argument's sign. A wide working space carries
 /// channels below zero, and a plain power of a negative base is not a number.
 fn ok_signed_cbrt(v: vec3<f32>) -> vec3<f32> {
@@ -850,9 +860,16 @@ fn apply_oklch_color(
         / (chroma + neighbour_chroma + OK_BAND_CHROMA_FLOOR);
     let trust = 1.0 - smoothstep(OK_BAND_TRUST_LOW, OK_BAND_TRUST_HIGH, disagreement);
 
-    let own_direction = lab.yz / (chroma + OK_BAND_CHROMA_FLOOR);
-    let neighbour_direction = neighbour_lab.yz / (neighbour_chroma + OK_BAND_NEIGHBOUR_FLOOR);
-    let selector = mix(own_direction, neighbour_direction, trust);
+    let own_direction = lab.yz / max(chroma, 1e-8);
+    let neighbour_direction = neighbour_lab.yz / max(neighbour_chroma, 1e-8);
+    let blended = mix(own_direction, neighbour_direction, trust);
+    let selector = blended / max(length(blended), 1e-8);
+
+    let confidence = smoothstep(
+        OK_BAND_CONFIDENCE_LOW,
+        OK_BAND_CONFIDENCE_HIGH,
+        mix(chroma, neighbour_chroma, trust)
+    );
 
     var weights: array<f32, 8>;
     var total: f32 = 0.0;
@@ -871,14 +888,17 @@ fn apply_oklch_color(
         // A colour no band owns divides evenly between all eight, so measuring
         // each band's share against an even one leaves neutrals untouched with
         // no threshold to cross.
-        let share = max((weights[i] / total - 0.125) / 0.875, 0.0);
+        let share = max((weights[i] / total - 0.125) / 0.875, 0.0) * confidence;
         band_hue = band_hue + hsl[i].hue * 2.0 * share;
         band_sat = band_sat + hsl[i].saturation * share;
         band_lum = band_lum + hsl[i].luminance * share;
     }
 
     hue = hue + band_hue + hue_shift_degrees;
-    l = max(l * (1.0 + band_lum), 0.0);
+    // Oklab lightness is perceptual, roughly the cube root of luminance, so
+    // scaling it directly hits about three times harder than the luminance
+    // scale this control used to be. The root restores the slider's reach.
+    l = max(l * pow(max(1.0 + band_lum, 0.0), 1.0 / 3.0), 0.0);
     chroma = max(chroma * (1.0 + band_sat), 0.0);
 
     chroma = max(chroma * (1.0 + sat), 0.0);

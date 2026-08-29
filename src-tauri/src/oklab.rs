@@ -211,6 +211,8 @@ mod tests {
     const SHADER_BAND_SOFTNESS: f32 = 0.18;
     const SHADER_TRUST_LOW: f32 = 0.30;
     const SHADER_TRUST_HIGH: f32 = 0.70;
+    const SHADER_CONFIDENCE_LOW: f32 = 0.002;
+    const SHADER_CONFIDENCE_HIGH: f32 = 0.06;
 
     fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
         let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
@@ -230,18 +232,22 @@ mod tests {
             / (chroma + nb_chroma + SHADER_BAND_CHROMA_FLOOR);
         let trust = 1.0 - smoothstep(SHADER_TRUST_LOW, SHADER_TRUST_HIGH, disagreement);
 
-        let own_dir = [
-            lab[1] / (chroma + SHADER_BAND_CHROMA_FLOOR),
-            lab[2] / (chroma + SHADER_BAND_CHROMA_FLOOR),
-        ];
-        let nb_dir = [
-            nb[1] / (nb_chroma + SHADER_BAND_NEIGHBOUR_FLOOR),
-            nb[2] / (nb_chroma + SHADER_BAND_NEIGHBOUR_FLOOR),
-        ];
-        let selector = [
+        let own_dir = [lab[1] / chroma.max(1e-8), lab[2] / chroma.max(1e-8)];
+        let nb_dir = [nb[1] / nb_chroma.max(1e-8), nb[2] / nb_chroma.max(1e-8)];
+        let blended = [
             own_dir[0] + (nb_dir[0] - own_dir[0]) * trust,
             own_dir[1] + (nb_dir[1] - own_dir[1]) * trust,
         ];
+        let length = (blended[0] * blended[0] + blended[1] * blended[1])
+            .sqrt()
+            .max(1e-8);
+        let selector = [blended[0] / length, blended[1] / length];
+
+        let confidence = smoothstep(
+            SHADER_CONFIDENCE_LOW,
+            SHADER_CONFIDENCE_HIGH,
+            chroma + (nb_chroma - chroma) * trust,
+        );
 
         let mut weights = [0.0f32; 8];
         let mut total = 0.0;
@@ -254,7 +260,7 @@ mod tests {
         }
         let mut shares = [0.0f32; 8];
         for i in 0..8 {
-            shares[i] = ((weights[i] / total - 0.125) / 0.875).max(0.0);
+            shares[i] = ((weights[i] / total - 0.125) / 0.875).max(0.0) * confidence;
         }
         (shares, trust)
     }
@@ -380,6 +386,40 @@ mod tests {
              {:.0}% against {:.0}%",
             guided[5] * 100.0,
             alone * 100.0
+        );
+    }
+
+    /// A sunset sky passes from blue through near-neutral to warm. Deciding
+    /// band membership and its strength with one exponential made that passage
+    /// accelerate and then stop dead, drawing an edge across smooth sky. Keeping
+    /// direction and confidence apart has to leave the change gradual.
+    #[test]
+    fn a_gradient_through_neutral_stays_gradual() {
+        let top = [0.36f32, 0.52, 0.72];
+        let bottom = [0.98f32, 0.86, 0.70];
+
+        let mut previous = 0.0f32;
+        let mut steepest = 0.0f32;
+        for i in 0..=40 {
+            let t = i as f32 / 40.0;
+            let colour = to_working([
+                top[0] + (bottom[0] - top[0]) * t,
+                top[1] + (bottom[1] - top[1]) * t,
+                top[2] + (bottom[2] - top[2]) * t,
+            ]);
+            let (shares, _) = guided_shares(colour, colour);
+            let lightness = oklab_from_prophoto(colour)[0];
+            let scaled = lightness * (1.0 - 0.53 * shares[5]).max(0.0).powf(1.0 / 3.0);
+            let change = (scaled - lightness) / lightness;
+            if i > 0 {
+                steepest = steepest.max((change - previous).abs());
+            }
+            previous = change;
+        }
+        assert!(
+            steepest < 0.02,
+            "lightness stepped {:.4} between neighbouring points of a smooth gradient",
+            steepest
         );
     }
 
