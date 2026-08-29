@@ -1381,7 +1381,7 @@ async fn merge_hdr(
     let mut hdr_merged = hdr_merge_images(&mut images.into()).map_err(|e| e.to_string())?;
     hdr_merged =
         image_hdr::stretch::apply_histogram_stretch(&hdr_merged).map_err(|e| e.to_string())?;
-    hdr_merged = apply_linear_to_srgb(hdr_merged);
+    hdr_merged = apply_linear_to_srgb(crate::image_processing::apply_prophoto_to_srgb(hdr_merged));
     log::info!("HDR merge completed");
 
     let mut buf = Cursor::new(Vec::new());

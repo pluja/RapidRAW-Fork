@@ -1866,9 +1866,16 @@ const ImageCanvas = memo(
           const avgG = gTotal / count;
           const avgB = bTotal / count;
 
-          const linR = Math.pow(avgR / 255.0, 2.2);
-          const linG = Math.pow(avgG / 255.0, 2.2);
-          const linB = Math.pow(avgB / 255.0, 2.2);
+          const srgbR = Math.pow(avgR / 255.0, 2.2);
+          const srgbG = Math.pow(avgG / 255.0, 2.2);
+          const srgbB = Math.pow(avgB / 255.0, 2.2);
+
+          // The canvas shows sRGB, but temperature and tint are applied as
+          // per-channel gains in the ProPhoto working space, so the sample has
+          // to be expressed there for a neutral pick to come out neutral.
+          const linR = 0.5293459 * srgbR + 0.3300728 * srgbG + 0.1405812 * srgbB;
+          const linG = 0.0983743 * srgbR + 0.8734611 * srgbG + 0.0281647 * srgbB;
+          const linB = 0.0168832 * srgbR + 0.1176725 * srgbG + 0.8654441 * srgbB;
 
           const sumRB = linR + linB;
           const deltaTemp = sumRB > 0.0001 ? ((linB - linR) / sumRB) * 125.0 : 0;

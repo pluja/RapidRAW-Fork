@@ -3501,7 +3501,7 @@ pub fn calculate_auto_adjustments(
         .image
         .clone();
 
-    let results = perform_auto_analysis(&original_image);
+    let results = perform_auto_analysis(&apply_prophoto_to_srgb((*original_image).clone()));
 
     Ok(auto_results_to_json(&results))
 }

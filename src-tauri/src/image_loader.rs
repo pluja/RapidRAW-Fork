@@ -561,12 +561,16 @@ pub fn composite_patches_on_image(
     let mut composited_image = base_image.clone();
     let lut = srgb_to_linear_lut();
 
+    // Patches arrive display-encoded and are composited into a working-space
+    // buffer, so they have to be lifted the same way any other sRGB input is.
     let get_color = |patch: &DecodedPatch, r: u8, g: u8, b: u8| -> (f32, f32, f32) {
-        if patch.is_srgb_encoded {
-            (lut[r as usize], lut[g as usize], lut[b as usize])
+        let linear = if patch.is_srgb_encoded {
+            [lut[r as usize], lut[g as usize], lut[b as usize]]
         } else {
-            (r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0)
-        }
+            [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0]
+        };
+        let working = crate::color_space::srgb_to_prophoto(linear);
+        (working[0], working[1], working[2])
     };
 
     match &mut composited_image {

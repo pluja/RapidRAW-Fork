@@ -319,13 +319,29 @@ fn denoise_image(
 
     let out_dynamic = if method == "ai" {
         let session_arc = ai_session.ok_or_else(|| "AI Session not provided".to_string())?;
-        crate::ai_processing::run_ai_denoise(
-            &rgb_img_for_denoiser,
+        // The denoise model was trained on display sRGB, so the working space
+        // is resolved for it and restored on the way back; everything after
+        // this point expects working-space data.
+        let model_input = if is_raw {
+            crate::image_processing::apply_prophoto_to_srgb(DynamicImage::ImageRgb32F(
+                rgb_img_for_denoiser.clone(),
+            ))
+            .to_rgb32f()
+        } else {
+            rgb_img_for_denoiser.clone()
+        };
+        let denoised = crate::ai_processing::run_ai_denoise(
+            &model_input,
             intensity,
             &session_arc,
             &app_handle,
         )
-        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+        if is_raw {
+            crate::image_processing::apply_srgb_to_prophoto(denoised)
+        } else {
+            denoised
+        }
     } else {
         run_bm3d(&rgb_img_for_denoiser, intensity, &app_handle)?
     };

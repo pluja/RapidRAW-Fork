@@ -37,7 +37,7 @@ fn prepare_source_image(
         .map_err(|e| format!("Failed to prepare source image: {}", e))?;
 
     let source_image = if is_raw {
-        apply_linear_to_srgb(composited)
+        apply_linear_to_srgb(crate::image_processing::apply_prophoto_to_srgb(composited))
     } else {
         composited
     };
