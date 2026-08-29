@@ -123,7 +123,7 @@ fn normalize_rows(m: Mat3) -> Option<Mat3> {
     Some(out)
 }
 
-fn bradford_adaptation(src_white: [f32; 3], dst_white: [f32; 3]) -> Mat3 {
+pub fn bradford_adaptation(src_white: [f32; 3], dst_white: [f32; 3]) -> Mat3 {
     let src_cone = apply(&BRADFORD, src_white);
     let dst_cone = apply(&BRADFORD, dst_white);
 
