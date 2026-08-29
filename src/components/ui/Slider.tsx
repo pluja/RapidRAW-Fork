@@ -29,10 +29,10 @@ interface SliderProps {
 const DOUBLE_CLICK_THRESHOLD_MS = 150;
 const FINE_ADJUSTMENT_MULTIPLIER = 0.2;
 
-// Crossing the whole range takes this many track widths of travel. Mapping it
-// 1:1 tied sensitivity to panel width, so a narrow panel made every slider
-// twitchier, and a single pixel of hand tremor moved the value by half a unit.
-const DRAG_TRAVEL_RATIO = 4;
+// Pointer travel that crosses the whole range, in pixels. Deliberately not a
+// multiple of the track: tying it to the track made sensitivity follow panel
+// width, so narrowing a row to fit a label beside it would undo the feel.
+const FULL_RANGE_TRAVEL_PX = 1300;
 
 // Dragging away from the slider vertically refines it, the way scrubby controls
 // in compositing apps do. Continuous, and needs no modifier held.
@@ -238,8 +238,7 @@ const Slider = ({
       }
 
       const multiplier = (shiftKey ? FINE_ADJUSTMENT_MULTIPLIER : 1) * precision;
-      const travel = sliderWidth * DRAG_TRAVEL_RATIO;
-      const deltaValue = (deltaX / travel) * (curMax - curMin) * multiplier;
+      const deltaValue = (deltaX / FULL_RANGE_TRAVEL_PX) * (curMax - curMin) * multiplier;
 
       const prevAccumulated = accumulatedValueRef.current;
       accumulatedValueRef.current = Math.max(curMin, Math.min(curMax, prevAccumulated + deltaValue));
@@ -561,64 +560,38 @@ const Slider = ({
   const numericValue = isNaN(Number(value)) ? 0 : Number(value);
 
   return (
-    <div className={`mb-2 group ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`} ref={containerRef}>
-      <div className="flex justify-between items-center mb-1">
-        <div
-          className={`grid ${typeof label === 'string' && !disabled ? 'cursor-pointer' : ''}`}
-          onClick={typeof label === 'string' && !disabled ? handleReset : undefined}
-          onDoubleClick={typeof label === 'string' && !disabled ? handleReset : undefined}
-          onMouseEnter={typeof label === 'string' && !disabled ? () => setIsLabelHovered(true) : undefined}
-          onMouseLeave={typeof label === 'string' && !disabled ? () => setIsLabelHovered(false) : undefined}
+    <div
+      className={`mb-1.5 group flex items-center gap-2 ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+      ref={containerRef}
+    >
+      <div
+        className={`w-24 shrink-0 grid ${typeof label === 'string' && !disabled ? 'cursor-pointer' : ''}`}
+        onClick={typeof label === 'string' && !disabled ? handleReset : undefined}
+        onDoubleClick={typeof label === 'string' && !disabled ? handleReset : undefined}
+        onMouseEnter={typeof label === 'string' && !disabled ? () => setIsLabelHovered(true) : undefined}
+        onMouseLeave={typeof label === 'string' && !disabled ? () => setIsLabelHovered(false) : undefined}
+      >
+        <span
+          aria-hidden={isLabelHovered && typeof label === 'string'}
+          className={`col-start-1 row-start-1 text-sm font-medium text-text-secondary select-none truncate transition-opacity duration-200 ease-in-out ${
+            isLabelHovered && typeof label === 'string' ? 'opacity-0' : 'opacity-100'
+          }`}
         >
+          {label}
+        </span>
+        {typeof label === 'string' && (
           <span
-            aria-hidden={isLabelHovered && typeof label === 'string'}
-            className={`col-start-1 row-start-1 text-sm font-medium text-text-secondary select-none transition-opacity duration-200 ease-in-out ${
-              isLabelHovered && typeof label === 'string' ? 'opacity-0' : 'opacity-100'
+            aria-hidden={!isLabelHovered}
+            className={`col-start-1 row-start-1 text-sm font-medium text-text-primary select-none truncate transition-opacity duration-200 ease-in-out pointer-events-none ${
+              isLabelHovered ? 'opacity-100' : 'opacity-0'
             }`}
           >
-            {label}
+            {t('ui.slider.reset')}
           </span>
-          {typeof label === 'string' && (
-            <span
-              aria-hidden={!isLabelHovered}
-              className={`col-start-1 row-start-1 text-sm font-medium text-text-primary select-none transition-opacity duration-200 ease-in-out pointer-events-none ${
-                isLabelHovered ? 'opacity-100' : 'opacity-0'
-              }`}
-            >
-              {t('ui.slider.reset')}
-            </span>
-          )}
-        </div>
-        <div className="w-12 text-right">
-          {isEditing ? (
-            <input
-              className="w-full text-sm text-right bg-card-active border border-gray-500 rounded-sm px-1 py-0 outline-none focus:ring-1 focus:ring-blue-500 text-text-primary"
-              disabled={disabled}
-              max={max}
-              min={min}
-              onBlur={handleInputCommit}
-              onChange={handleInputChange}
-              onKeyDown={handleInputKeyDown}
-              ref={inputRef}
-              step={step}
-              type="text"
-              value={inputValue}
-            />
-          ) : (
-            <span
-              className={`text-sm text-text-primary w-full text-right select-none ${disabled ? '' : 'cursor-text'}`}
-              onClick={disabled ? undefined : handleValueClick}
-              onDoubleClick={disabled ? undefined : handleReset}
-              data-tooltip={disabled ? undefined : t('ui.slider.clickToEdit')}
-            >
-              {decimalPlaces > 0 && numericValue === 0 ? '0' : numericValue.toFixed(decimalPlaces)}
-              {suffix && <span className="text-[10px] align-top inline-block mt-0.5 ml-0.5">{suffix}</span>}
-            </span>
-          )}
-        </div>
+        )}
       </div>
 
-      <div className="relative w-full h-5">
+      <div className="relative flex-1 h-4">
         <div
           className={`absolute top-1/2 left-0 w-full h-1.5 -translate-y-1/2 rounded-full pointer-events-none ${
             trackClassName || 'bg-card-active'
@@ -651,6 +624,33 @@ const Slider = ({
           type="range"
           value={thumbValue}
         />
+      </div>
+      <div className="w-9 shrink-0 text-right">
+        {isEditing ? (
+          <input
+            className="w-full text-sm text-right bg-card-active border border-gray-500 rounded-sm px-1 py-0 outline-none focus:ring-1 focus:ring-blue-500 text-text-primary"
+            disabled={disabled}
+            max={max}
+            min={min}
+            onBlur={handleInputCommit}
+            onChange={handleInputChange}
+            onKeyDown={handleInputKeyDown}
+            ref={inputRef}
+            step={step}
+            type="text"
+            value={inputValue}
+          />
+        ) : (
+          <span
+            className={`text-sm text-text-primary w-full text-right select-none tabular-nums ${disabled ? '' : 'cursor-text'}`}
+            onClick={disabled ? undefined : handleValueClick}
+            onDoubleClick={disabled ? undefined : handleReset}
+            data-tooltip={disabled ? undefined : t('ui.slider.clickToEdit')}
+          >
+            {decimalPlaces > 0 && numericValue === 0 ? '0' : numericValue.toFixed(decimalPlaces)}
+            {suffix && <span className="text-[10px] align-top inline-block mt-0.5 ml-0.5">{suffix}</span>}
+          </span>
+        )}
       </div>
     </div>
   );

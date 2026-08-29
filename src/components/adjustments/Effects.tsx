@@ -196,7 +196,7 @@ export default function EffectsPanel({
   const adjustmentVisibility = appSettings?.adjustmentVisibility || {};
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       <div className="p-2 bg-bg-tertiary rounded-md">
         <Text variant={TextVariants.heading} className="mb-2">
           {t('adjustments.effects.creative')}
@@ -236,7 +236,7 @@ export default function EffectsPanel({
       </div>
 
       {!isForMask && (
-        <div className="space-y-4">
+        <div className="space-y-2">
           <div className="p-2 bg-bg-tertiary rounded-md">
             <Text variant={TextVariants.heading} className="mb-2">
               {t('adjustments.effects.lensBlur')}

@@ -469,7 +469,7 @@ export default function ColorPanel({
   const luminance_slider = `lum-slider-${activeColor}`;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       <div className="p-2 bg-bg-tertiary rounded-md">
         <div className="flex justify-between items-center mb-2">
           <Text variant={TextVariants.heading}>{t('adjustments.color.whiteBalance')}</Text>
@@ -550,7 +550,7 @@ export default function ColorPanel({
       </div>
 
       <div className="p-2 bg-bg-tertiary rounded-md">
-        <Text variant={TextVariants.heading} className="mb-3">
+        <Text variant={TextVariants.heading} className="mb-2">
           {t('adjustments.color.colorGrading')}
         </Text>
         <ColorGradingPanel
@@ -562,7 +562,7 @@ export default function ColorPanel({
       </div>
 
       <div className="p-2 bg-bg-tertiary rounded-md">
-        <Text variant={TextVariants.heading} className="mb-3">
+        <Text variant={TextVariants.heading} className="mb-2">
           {t('adjustments.color.colorMixer')}
         </Text>
         <div className="flex justify-between mb-4 px-1">
