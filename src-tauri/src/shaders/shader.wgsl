@@ -759,7 +759,6 @@ const OKLAB_TO_LMS = mat3x3<f32>(
 // photographer means by its name rather than the ones an RGB hexcone happens to
 // place there. Blue sits at 264 here against 225 in the old HSV geometry.
 const OK_BAND_CENTERS = array<f32, 8>(29.23, 67.93, 109.78, 142.51, 194.80, 264.06, 311.99, 328.36);
-const OK_BAND_FALLOFF_DEG: f32 = 75.0;
 
 // Skin holds an Oklch hue within a couple of degrees of this across light and
 // deep tones alike, which is what makes guarding it there meaningful.
@@ -770,15 +769,17 @@ const OK_SKIN_GUARD: f32 = 0.45;
 const OK_VIBRANCE_STRENGTH: f32 = 2.0;
 const OK_CHROMA_REFERENCE: f32 = 0.16;
 
-// How far a colour has to be from neutral before a band claims it. Hue is the
-// arctangent of two small differences, so at low chroma it is largely sensor
-// noise, and anything selecting on it has to fade out or that noise reaches the
-// image. Luminance ramps across the whole chroma range rather than reaching
-// full strength early, because a luminance wobble is what shows in the smooth
-// gradient of a sky.
-const OK_BAND_AUTHORITY_LOW: f32 = 0.01;
-const OK_BAND_AUTHORITY_HIGH: f32 = 0.06;
-const OK_LUMA_AUTHORITY_HIGH: f32 = 0.30;
+// How sharply a band claims a colour. Bands are selected by projecting the
+// chroma vector onto each band's direction rather than by comparing hue angles:
+// hue is the arctangent of two small differences, so it is largely sensor noise
+// at low chroma, and selecting on it turned that noise into a visible cloud
+// across the smooth gradient of a sky. A projection carries no such
+// amplification, since it falls away with chroma rather than growing.
+//
+// Lower is more selective, and also noisier. At 0.07 a pale sky takes about a
+// tenth of the adjustment with a wobble near half a display step, where hue
+// angles cost three times the wobble for the same effect.
+const OK_BAND_SOFTNESS: f32 = 0.07;
 
 /// Cube root that keeps its argument's sign. A wide working space carries
 /// channels below zero, and a plain power of a negative base is not a number.
@@ -824,35 +825,32 @@ fn apply_oklch_color(
         hue = hue + 360.0;
     }
 
-    let chromatic = smoothstep(OK_BAND_AUTHORITY_LOW, OK_BAND_AUTHORITY_HIGH, chroma);
-    let luma_authority = smoothstep(0.0, OK_LUMA_AUTHORITY_HIGH, chroma);
+    var weights: array<f32, 8>;
+    var total: f32 = 0.0;
+    for (var i = 0u; i < 8u; i = i + 1u) {
+        let direction = radians(OK_BAND_CENTERS[i]);
+        let alignment = lab.y * cos(direction) + lab.z * sin(direction);
+        let weight = exp(alignment / OK_BAND_SOFTNESS);
+        weights[i] = weight;
+        total = total + weight;
+    }
 
     var band_hue: f32 = 0.0;
     var band_sat: f32 = 0.0;
     var band_lum: f32 = 0.0;
-
-    if (chromatic > 0.0) {
-        var weights: array<f32, 8>;
-        var total: f32 = 0.0;
-        for (var i = 0u; i < 8u; i = i + 1u) {
-            let reach = max(0.0, 1.0 - ok_hue_distance(hue, OK_BAND_CENTERS[i]) / OK_BAND_FALLOFF_DEG);
-            let smoothed = reach * reach * (3.0 - 2.0 * reach);
-            weights[i] = smoothed;
-            total = total + smoothed;
-        }
-        if (total > 1e-6) {
-            for (var i = 0u; i < 8u; i = i + 1u) {
-                let share = weights[i] / total;
-                band_hue = band_hue + hsl[i].hue * 2.0 * share;
-                band_sat = band_sat + hsl[i].saturation * share;
-                band_lum = band_lum + hsl[i].luminance * share;
-            }
-        }
+    for (var i = 0u; i < 8u; i = i + 1u) {
+        // A colour no band owns divides evenly between all eight, so measuring
+        // each band's share against an even one leaves neutrals untouched with
+        // no threshold to cross.
+        let share = max((weights[i] / total - 0.125) / 0.875, 0.0);
+        band_hue = band_hue + hsl[i].hue * 2.0 * share;
+        band_sat = band_sat + hsl[i].saturation * share;
+        band_lum = band_lum + hsl[i].luminance * share;
     }
 
-    hue = hue + (band_hue + hue_shift_degrees) * chromatic;
-    l = max(l * (1.0 + band_lum * luma_authority), 0.0);
-    chroma = max(chroma * (1.0 + band_sat * chromatic), 0.0);
+    hue = hue + band_hue + hue_shift_degrees;
+    l = max(l * (1.0 + band_lum), 0.0);
+    chroma = max(chroma * (1.0 + band_sat), 0.0);
 
     chroma = max(chroma * (1.0 + sat), 0.0);
 
@@ -863,7 +861,7 @@ fn apply_oklch_color(
         let headroom = 1.0 - smoothstep(0.2, 1.6, chroma / OK_CHROMA_REFERENCE);
         let from_skin = ok_hue_distance(hue, OK_SKIN_HUE_DEG) / OK_SKIN_WIDTH_DEG;
         let guard = 1.0 - OK_SKIN_GUARD * exp(-from_skin * from_skin);
-        chroma = max(chroma * (1.0 + vib * OK_VIBRANCE_STRENGTH * headroom * guard * chromatic), 0.0);
+        chroma = max(chroma * (1.0 + vib * OK_VIBRANCE_STRENGTH * headroom * guard), 0.0);
     }
 
     let radians_hue = radians(hue);
