@@ -367,6 +367,14 @@ fn hash(p: vec2<f32>) -> f32 {
 /// Scales the slider so its range lands where the previous grain did.
 const GRAIN_STRENGTH: f32 = 0.5;
 
+/// Finest grain cell worth rendering, in pixels of whatever is being drawn.
+///
+/// Grain cannot be finer than the pixels carrying it. Asked for less, the
+/// frequency saturates here rather than folding into per-pixel noise, which
+/// would look like a different film at every preview size and vanish once the
+/// octaves faded out.
+const GRAIN_MIN_CELL_PX: f32 = 1.6;
+
 /// How much each dye layer's grain differs from the others. All the way to one
 /// reads as colour noise rather than grain.
 const GRAIN_LAYER_INDEPENDENCE: f32 = 0.30;
@@ -382,21 +390,33 @@ fn value_noise(p: vec2<f32>) -> f32 {
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y) * 2.0 - 1.0;
 }
 
+/// Weight for an octave whose cells span this many pixels.
+///
+/// Under about two pixels a cell cannot be resolved: the octave stops being
+/// grain structure and becomes per-pixel noise, which crawls as the preview
+/// resolution changes. Fading it out keeps the texture the same shape at every
+/// zoom, which is the point of a resolution-independent grain model.
+fn grain_octave_weight(cell_pixels: f32) -> f32 {
+    return smoothstep(1.0, 2.5, cell_pixels);
+}
+
 /// Grain crystals scatter as a Poisson process and are then filtered by the
 /// film and the scanner, so the texture carries a broad band of frequencies
 /// rather than the single one a lattice noise gives. Octaves are summed to
 /// approximate that; roughness shifts weight toward the coarser ones instead of
 /// trading the finer ones away, which is what a crossfade did.
-fn grain_noise(p: vec2<f32>, roughness: f32) -> f32 {
+fn grain_noise(p: vec2<f32>, roughness: f32, cell_pixels: f32) -> f32 {
     let fine = value_noise(p * 2.0 + vec2<f32>(7.1, 31.7));
     let mid = value_noise(p);
     let coarse = value_noise(p * 0.5 + vec2<f32>(19.7, 4.3));
 
-    let w_fine = mix(0.55, 0.20, roughness);
-    let w_mid = 1.0;
-    let w_coarse = mix(0.25, 0.85, roughness);
+    let w_fine = mix(0.55, 0.20, roughness) * grain_octave_weight(cell_pixels * 0.5);
+    let w_mid = grain_octave_weight(cell_pixels);
+    let w_coarse = mix(0.25, 0.85, roughness) * grain_octave_weight(cell_pixels * 2.0);
 
-    let total = sqrt(w_fine * w_fine + w_mid * w_mid + w_coarse * w_coarse);
+    // Normalising by the weights actually used keeps the amount steady as an
+    // octave fades, rather than the grain quietly weakening with resolution.
+    let total = max(sqrt(w_fine * w_fine + w_mid * w_mid + w_coarse * w_coarse), 1e-4);
     return (fine * w_fine + mid * w_mid + coarse * w_coarse) / total;
 }
 
@@ -2254,7 +2274,10 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     if (adjustments.global.grain_amount > 0.0) {
         let coord = vec2<f32>(absolute_coord_i);
         let amount = adjustments.global.grain_amount * GRAIN_STRENGTH;
-        let grain_frequency = (1.0 / max(adjustments.global.grain_size, 0.1)) / scale;
+        let grain_frequency = min(
+            (1.0 / max(adjustments.global.grain_size, 0.1)) / scale,
+            1.0 / GRAIN_MIN_CELL_PX
+        );
         let roughness = adjustments.global.grain_roughness;
         let base_coord = coord * grain_frequency;
 
@@ -2269,10 +2292,11 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         // Colour negative carries three dye layers, each with its own grain, so
         // real colour grain is not the same value on every channel. Sharing most
         // of it keeps the texture reading as grain rather than as chroma noise.
+        let cell_pixels = 1.0 / max(grain_frequency, 1e-4);
         let per_layer = vec3<f32>(
-            grain_noise(base_coord, roughness),
-            grain_noise(base_coord + vec2<f32>(53.7, 11.3), roughness),
-            grain_noise(base_coord + vec2<f32>(97.1, 61.9), roughness)
+            grain_noise(base_coord, roughness, cell_pixels),
+            grain_noise(base_coord + vec2<f32>(53.7, 11.3), roughness, cell_pixels),
+            grain_noise(base_coord + vec2<f32>(97.1, 61.9), roughness, cell_pixels)
         );
         let layer_mean = (per_layer.r + per_layer.g + per_layer.b) / 3.0;
         let noise_rgb = mix(vec3<f32>(layer_mean), per_layer, GRAIN_LAYER_INDEPENDENCE);

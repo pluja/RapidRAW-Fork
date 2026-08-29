@@ -14,6 +14,29 @@
 /// How much each dye layer's grain differs from the others.
 pub const LAYER_INDEPENDENCE: f32 = 0.30;
 
+/// Finest grain cell worth rendering, in pixels of whatever is being drawn.
+pub const MIN_CELL_PX: f32 = 1.6;
+
+fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// Weight for an octave whose cells span this many pixels.
+///
+/// Under about two pixels a cell cannot be resolved: the octave stops being
+/// grain structure and becomes per-pixel noise, which crawls as the preview
+/// resolution changes.
+pub fn octave_weight(cell_pixels: f32) -> f32 {
+    smoothstep(1.0, 2.5, cell_pixels)
+}
+
+/// Cells per pixel, saturating where grain would be finer than the pixels
+/// carrying it.
+pub fn frequency(grain_size: f32, scale: f32) -> f32 {
+    ((1.0 / grain_size.max(0.1)) / scale).min(1.0 / MIN_CELL_PX)
+}
+
 fn hash(x: f32, y: f32) -> f32 {
     let mut p3 = [
         (x * 0.1031).fract(),
@@ -49,16 +72,18 @@ pub fn value_noise(x: f32, y: f32) -> f32 {
 
 /// Octaves summed to a broad band, with roughness moving weight toward the
 /// coarser ones rather than trading the finer ones away.
-pub fn grain_noise(x: f32, y: f32, roughness: f32) -> f32 {
+pub fn grain_noise(x: f32, y: f32, roughness: f32, cell_pixels: f32) -> f32 {
     let fine = value_noise(x * 2.0 + 7.1, y * 2.0 + 31.7);
     let mid = value_noise(x, y);
     let coarse = value_noise(x * 0.5 + 19.7, y * 0.5 + 4.3);
 
-    let w_fine = 0.55 + (0.20 - 0.55) * roughness;
-    let w_mid = 1.0f32;
-    let w_coarse = 0.25 + (0.85 - 0.25) * roughness;
+    let w_fine = (0.55 + (0.20 - 0.55) * roughness) * octave_weight(cell_pixels * 0.5);
+    let w_mid = octave_weight(cell_pixels);
+    let w_coarse = (0.25 + (0.85 - 0.25) * roughness) * octave_weight(cell_pixels * 2.0);
 
-    let total = (w_fine * w_fine + w_mid * w_mid + w_coarse * w_coarse).sqrt();
+    let total = (w_fine * w_fine + w_mid * w_mid + w_coarse * w_coarse)
+        .sqrt()
+        .max(1e-4);
     (fine * w_fine + mid * w_mid + coarse * w_coarse) / total
 }
 
@@ -99,7 +124,8 @@ mod tests {
         let sample = |roughness: f32| {
             let values: Vec<f32> = (0..90)
                 .flat_map(|i| {
-                    (0..90).map(move |j| grain_noise(i as f32 * 0.37, j as f32 * 0.53, roughness))
+                    (0..90)
+                        .map(move |j| grain_noise(i as f32 * 0.37, j as f32 * 0.53, roughness, 6.0))
                 })
                 .collect();
             stdev(&values)
@@ -138,6 +164,50 @@ mod tests {
         }
     }
 
+    /// A cell finer than a pixel is not grain, it is per-pixel noise that looks
+    /// like a different film at every preview size. Something has to render at
+    /// every setting, though, or grain vanishes in the preview and returns on
+    /// export.
+    #[test]
+    fn grain_renders_at_every_size_and_scale() {
+        for size in [1.0f32, 10.0, 25.0, 50.0, 100.0] {
+            for render_px in [1200.0f32, 1600.0, 2400.0, 6240.0] {
+                let scale = render_px / 1080.0;
+                let cell = 1.0 / frequency(size / 50.0, scale);
+                assert!(
+                    cell >= MIN_CELL_PX - 1e-5,
+                    "size {size} at {render_px}px gave a {cell}px cell"
+                );
+
+                let strongest = octave_weight(cell * 2.0);
+                assert!(
+                    strongest > 0.2,
+                    "size {size} at {render_px}px left nothing to render"
+                );
+            }
+        }
+    }
+
+    /// Fading an octave must not quietly take the amount with it.
+    #[test]
+    fn amount_holds_as_octaves_fade() {
+        let sample = |cell: f32| {
+            let values: Vec<f32> = (0..80)
+                .flat_map(|i| {
+                    (0..80).map(move |j| grain_noise(i as f32 * 0.37, j as f32 * 0.53, 0.5, cell))
+                })
+                .collect();
+            stdev(&values)
+        };
+
+        let resolved = sample(8.0);
+        let squeezed = sample(MIN_CELL_PX);
+        assert!(
+            (resolved - squeezed).abs() / resolved < 0.25,
+            "amount fell from {resolved} to {squeezed} once the octaves faded"
+        );
+    }
+
     /// Three dye layers each carry their own grain, but sharing most of it is
     /// what keeps the result reading as grain rather than as colour noise.
     #[test]
@@ -147,9 +217,9 @@ mod tests {
             for j in 0..40 {
                 let (x, y) = (i as f32 * 0.41, j as f32 * 0.59);
                 let layers = [
-                    grain_noise(x, y, 0.5),
-                    grain_noise(x + 53.7, y + 11.3, 0.5),
-                    grain_noise(x + 97.1, y + 61.9, 0.5),
+                    grain_noise(x, y, 0.5, 6.0),
+                    grain_noise(x + 53.7, y + 11.3, 0.5, 6.0),
+                    grain_noise(x + 97.1, y + 61.9, 0.5, 6.0),
                 ];
                 let mean = layers.iter().sum::<f32>() / 3.0;
                 let mixed: Vec<f32> = layers
