@@ -782,7 +782,20 @@ const OK_CHROMA_REFERENCE: f32 = 0.16;
 // lower softness makes bands more selective. At these values a pale sky takes
 // around two fifths of the adjustment against a tenth for the raw vector.
 const OK_BAND_CHROMA_FLOOR: f32 = 0.02;
-const OK_BAND_SOFTNESS: f32 = 0.30;
+const OK_BAND_SOFTNESS: f32 = 0.18;
+
+// A neighbourhood average of the chroma vector carries almost none of the noise
+// a single pixel does, because chroma noise is high frequency while the colour
+// of a region is not. Where the two agree, the average can be normalised far
+// harder than a lone pixel and a band claims a pale colour in full.
+const OK_BAND_NEIGHBOUR_FLOOR: f32 = 0.012;
+
+// Where they disagree the average is straddling an edge, and normalising it
+// would drag one side's colour identity across the boundary as a halo. The
+// pixel's own vector takes over there. The window is wide enough that a sky
+// meeting a sea, both of them blue, still counts as agreement.
+const OK_BAND_TRUST_LOW: f32 = 0.30;
+const OK_BAND_TRUST_HIGH: f32 = 0.70;
 
 /// Cube root that keeps its argument's sign. A wide working space carries
 /// channels below zero, and a plain power of a negative base is not a number.
@@ -815,6 +828,7 @@ fn ok_hue_distance(a: f32, b: f32) -> f32 {
 /// spends two conversions rather than the six the separate controls cost.
 fn apply_oklch_color(
     color: vec3<f32>,
+    neighbourhood: vec3<f32>,
     hue_shift_degrees: f32,
     sat: f32,
     vib: f32,
@@ -828,7 +842,17 @@ fn apply_oklch_color(
         hue = hue + 360.0;
     }
 
-    let selector = lab.yz / (chroma + OK_BAND_CHROMA_FLOOR);
+    let neighbour_lab = oklab_from_working(neighbourhood);
+    let neighbour_chroma = length(neighbour_lab.yz);
+
+    // Relative, so it reads the same on a pale sky as on a saturated flower.
+    let disagreement = length(lab.yz - neighbour_lab.yz)
+        / (chroma + neighbour_chroma + OK_BAND_CHROMA_FLOOR);
+    let trust = 1.0 - smoothstep(OK_BAND_TRUST_LOW, OK_BAND_TRUST_HIGH, disagreement);
+
+    let own_direction = lab.yz / (chroma + OK_BAND_CHROMA_FLOOR);
+    let neighbour_direction = neighbour_lab.yz / (neighbour_chroma + OK_BAND_NEIGHBOUR_FLOOR);
+    let selector = mix(own_direction, neighbour_direction, trust);
 
     var weights: array<f32, 8>;
     var total: f32 = 0.0;
@@ -882,7 +906,7 @@ fn apply_oklch_saturation(color: vec3<f32>, sat: f32, vib: f32) -> vec3<f32> {
         HslColor(0.0, 0.0, 0.0, 0.0), HslColor(0.0, 0.0, 0.0, 0.0),
         HslColor(0.0, 0.0, 0.0, 0.0), HslColor(0.0, 0.0, 0.0, 0.0)
     );
-    return apply_oklch_color(color, 0.0, sat, vib, none);
+    return apply_oklch_color(color, color, 0.0, sat, vib, none);
 }
 
 fn apply_color_grading(color: vec3<f32>, shadows: ColorGradeSettings, midtones: ColorGradeSettings, highlights: ColorGradeSettings, global: ColorGradeSettings, blending: f32, balance: f32) -> vec3<f32> {
@@ -1968,8 +1992,18 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     composite_rgb_linear = apply_tonal_adjustments(composite_rgb_linear, tonal_blurred, is_raw, t_contrast, t_shadows, t_whites, t_blacks);
     composite_rgb_linear = apply_highlights_adjustment(composite_rgb_linear, tonal_blurred, is_raw, t_highlights);
     composite_rgb_linear = apply_color_calibration(composite_rgb_linear, adjustments.global.color_calibration);
+    // Band identity is read from a neighbourhood rather than a lone pixel. The
+    // blur is of the unadjusted image, so it is white balanced to match; the
+    // tonal work between them barely moves hue.
+    var band_reference = clarity_blurred;
+    if (is_raw == 0u) {
+        band_reference = input_to_working(band_reference);
+    }
+    band_reference = apply_white_balance(band_reference, t_temperature, t_tint);
+
     composite_rgb_linear = apply_oklch_color(
         composite_rgb_linear,
+        band_reference,
         t_hue,
         t_saturation,
         t_vibrance,

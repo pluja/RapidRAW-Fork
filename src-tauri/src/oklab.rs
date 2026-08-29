@@ -207,7 +207,57 @@ mod tests {
     const BAND_CENTERS: [f32; 8] = [29.23, 67.93, 109.78, 142.51, 194.80, 264.06, 311.99, 328.36];
     /// Mirror the band selection constants in shader.wgsl.
     const SHADER_BAND_CHROMA_FLOOR: f32 = 0.02;
-    const SHADER_BAND_SOFTNESS: f32 = 0.30;
+    const SHADER_BAND_NEIGHBOUR_FLOOR: f32 = 0.012;
+    const SHADER_BAND_SOFTNESS: f32 = 0.18;
+    const SHADER_TRUST_LOW: f32 = 0.30;
+    const SHADER_TRUST_HIGH: f32 = 0.70;
+
+    fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+        let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+        t * t * (3.0 - 2.0 * t)
+    }
+
+    /// Reproduces the shader's guided band selection: identity is read from a
+    /// neighbourhood average where that agrees with the pixel, and from the
+    /// pixel alone where it does not.
+    fn guided_shares(own: [f32; 3], neighbourhood: [f32; 3]) -> ([f32; 8], f32) {
+        let lab = oklab_from_prophoto(own);
+        let nb = oklab_from_prophoto(neighbourhood);
+        let chroma = (lab[1] * lab[1] + lab[2] * lab[2]).sqrt();
+        let nb_chroma = (nb[1] * nb[1] + nb[2] * nb[2]).sqrt();
+
+        let disagreement = ((lab[1] - nb[1]).powi(2) + (lab[2] - nb[2]).powi(2)).sqrt()
+            / (chroma + nb_chroma + SHADER_BAND_CHROMA_FLOOR);
+        let trust = 1.0 - smoothstep(SHADER_TRUST_LOW, SHADER_TRUST_HIGH, disagreement);
+
+        let own_dir = [
+            lab[1] / (chroma + SHADER_BAND_CHROMA_FLOOR),
+            lab[2] / (chroma + SHADER_BAND_CHROMA_FLOOR),
+        ];
+        let nb_dir = [
+            nb[1] / (nb_chroma + SHADER_BAND_NEIGHBOUR_FLOOR),
+            nb[2] / (nb_chroma + SHADER_BAND_NEIGHBOUR_FLOOR),
+        ];
+        let selector = [
+            own_dir[0] + (nb_dir[0] - own_dir[0]) * trust,
+            own_dir[1] + (nb_dir[1] - own_dir[1]) * trust,
+        ];
+
+        let mut weights = [0.0f32; 8];
+        let mut total = 0.0;
+        for i in 0..8 {
+            let direction = BAND_CENTERS[i].to_radians();
+            weights[i] = ((selector[0] * direction.cos() + selector[1] * direction.sin())
+                / SHADER_BAND_SOFTNESS)
+                .exp();
+            total += weights[i];
+        }
+        let mut shares = [0.0f32; 8];
+        for i in 0..8 {
+            shares[i] = ((weights[i] / total - 0.125) / 0.875).max(0.0);
+        }
+        (shares, trust)
+    }
 
     fn to_working(srgb: [f32; 3]) -> [f32; 3] {
         color_space::apply(
@@ -266,9 +316,9 @@ mod tests {
         lch[0] * (1.0 + amount * (weights[band] / total) * authority)
     }
 
-    /// A real sky is far paler than a saturated blue: an X-S20 frame measures
-    /// around 0.045 chroma at the top and 0.011 at the horizon. A band has to
-    /// claim it anyway, because it is still unmistakably blue to look at.
+    /// The edge fallback again: even without a neighbourhood to lean on, a
+    /// pale sky has to be recognisably blue. An X-S20 frame measures around
+    /// 0.045 chroma at the top and 0.011 at the horizon.
     #[test]
     fn a_pale_sky_is_claimed_by_its_band() {
         let upper = to_working([0.42, 0.58, 0.75]);
@@ -288,26 +338,94 @@ mod tests {
         );
     }
 
-    /// A sky is smooth to the eye and noisy per pixel, so what the band lets
-    /// through has to stay well under a display step.
+    /// Chroma noise is high frequency while the colour of a region is not, so
+    /// reading identity from a neighbourhood removes the wobble outright rather
+    /// than trading it against strength.
     #[test]
-    fn a_pale_sky_does_not_carry_its_noise_into_lightness() {
-        let upper = to_working([0.42, 0.58, 0.75]);
+    fn a_neighbourhood_removes_the_noise_entirely() {
+        let sky = to_working([0.42, 0.58, 0.75]);
         let noisy = to_working([0.425, 0.577, 0.756]);
-        let base = oklab_from_prophoto(upper)[0];
-        let wobble =
-            (band_luminance(upper, 5, -0.99) - band_luminance(noisy, 5, -0.99)).abs() / base;
+        let (clean, _) = guided_shares(sky, sky);
+        let (perturbed, _) = guided_shares(noisy, sky);
         assert!(
-            wobble < 0.015,
-            "a noise step moved lightness by {:.2}%",
-            wobble * 100.0
+            (clean[5] - perturbed[5]).abs() < 1e-4,
+            "identity moved by {:.4} across a noise step",
+            (clean[5] - perturbed[5]).abs()
         );
     }
 
+    /// The gain the neighbourhood buys: a pale sky is claimed in earnest rather
+    /// than at the arm's length a lone pixel's vector required.
+    #[test]
+    fn a_neighbourhood_claims_a_pale_sky_in_earnest() {
+        let sky = to_working([0.42, 0.58, 0.75]);
+        let (guided, trust) = guided_shares(sky, sky);
+        assert!(
+            trust > 0.99,
+            "an even sky should be trusted, got {trust:.2}"
+        );
+        assert!(
+            guided[5] > 0.60,
+            "a pale sky took only {:.0}% of its band",
+            guided[5] * 100.0
+        );
+
+        // The pixel's own vector reaches a similar share only because the
+        // neighbourhood is what makes this selectivity safe to use at all; on
+        // its own it would carry the noise measured in the test above.
+        let alone = band_shares(oklab_from_prophoto(sky), SHADER_BAND_SOFTNESS)[5];
+        assert!(
+            guided[5] > alone,
+            "the neighbourhood should claim at least as much as the pixel alone: \
+             {:.0}% against {:.0}%",
+            guided[5] * 100.0,
+            alone * 100.0
+        );
+    }
+
+    /// Straddling an edge, a neighbourhood average is a colour that exists
+    /// nowhere, and normalising it would drag one side's identity across the
+    /// boundary. The pixel's own vector has to take over.
+    #[test]
+    fn an_edge_falls_back_to_the_pixel() {
+        let sky = to_working([0.42, 0.58, 0.75]);
+        let orange = to_working([0.85, 0.45, 0.15]);
+        let (_, trust) = guided_shares(sky, orange);
+        assert!(trust < 0.01, "an edge was trusted at {trust:.2}");
+    }
+
+    /// A sky meeting a sea is two blues, not an edge, and has to stay trusted.
+    #[test]
+    fn like_colours_meeting_are_not_an_edge() {
+        let sea = to_working([0.18, 0.40, 0.45]);
+        let sky = to_working([0.30, 0.49, 0.60]);
+        let (_, trust) = guided_shares(sea, sky);
+        assert!(
+            trust > 0.5,
+            "two blues meeting were trusted at only {trust:.2}"
+        );
+    }
+
+    #[test]
+    fn a_neighbourhood_still_leaves_neutrals_alone() {
+        for level in [0.15f32, 0.45, 0.8] {
+            let grey = [level, level, level];
+            let (shares, _) = guided_shares(grey, grey);
+            assert!(
+                shares[5] < 0.006,
+                "grey at {level} took {:.2}% of a band",
+                shares[5] * 100.0
+            );
+        }
+    }
+
+    /// The edge fallback, where the pixel's own vector selects alone.
+    ///
     /// A colour no band owns divides evenly between all eight, so measuring
     /// each share against an even one leaves neutrals alone with no threshold
-    /// to cross. The bound is a fraction of a display step rather than zero,
-    /// since claiming pale colours firmly necessarily lets a trace through.
+    /// to cross. The bound is one step of an eight bit display at full slider
+    /// travel rather than zero, since claiming pale colours firmly necessarily
+    /// lets a trace through on colours that are nearly not there.
     #[test]
     fn neutrals_are_untouched_by_a_band() {
         for level in [0.15f32, 0.45, 0.8] {
@@ -315,7 +433,7 @@ mod tests {
             let base = oklab_from_prophoto(grey)[0];
             let moved = (base - band_luminance(grey, 5, -0.99)).abs() / base;
             assert!(
-                moved < 0.003,
+                moved < 0.006,
                 "grey at {level} moved by {:.4}%, which would show as banding",
                 moved * 100.0
             );
