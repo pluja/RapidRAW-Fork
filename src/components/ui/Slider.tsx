@@ -28,6 +28,16 @@ interface SliderProps {
 
 const DOUBLE_CLICK_THRESHOLD_MS = 150;
 const FINE_ADJUSTMENT_MULTIPLIER = 0.2;
+
+// Crossing the whole range takes this many track widths of travel. Mapping it
+// 1:1 tied sensitivity to panel width, so a narrow panel made every slider
+// twitchier, and a single pixel of hand tremor moved the value by half a unit.
+const DRAG_TRAVEL_RATIO = 4;
+
+// Dragging away from the slider vertically refines it, the way scrubby controls
+// in compositing apps do. Continuous, and needs no modifier held.
+const PRECISION_FALLOFF_PX = 140;
+const MIN_PRECISION = 0.08;
 const TOUCH_DRAG_THRESHOLD_PX = 10;
 const TOUCH_THUMB_HIT_RADIUS_PX = 24;
 
@@ -51,6 +61,9 @@ const Slider = ({
 }: SliderProps) => {
   const { t } = useTranslation();
   const [displayValue, setDisplayValue] = useState<number>(value);
+  // The thumb draws from the unsnapped position so it glides, while the value
+  // handed to the parent and shown in the readout still snaps to the step.
+  const [smoothValue, setSmoothValue] = useState<number>(value);
   const [isDragging, setIsDragging] = useState(false);
   const animationFrameRef = useRef<number | undefined>(undefined);
   const [isEditing, setIsEditing] = useState(false);
@@ -61,6 +74,7 @@ const Slider = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const lastUpTime = useRef(0);
   const lastPointerXRef = useRef<number>(0);
+  const dragOriginYRef = useRef<number | null>(null);
   const accumulatedValueRef = useRef<number>(0);
   const pendingTouchRef = useRef<{
     startX: number;
@@ -80,7 +94,8 @@ const Slider = ({
     };
   }, []);
 
-  const fillPercentage = max !== min ? ((displayValue - min) / (max - min)) * 100 : 0;
+  const thumbValue = isDragging ? smoothValue : displayValue;
+  const fillPercentage = max !== min ? ((thumbValue - min) / (max - min)) * 100 : 0;
   const originPercentage = useMemo(() => {
     if (fillOrigin === 'min') {
       return 0;
@@ -135,6 +150,7 @@ const Slider = ({
     setIsEditing(false);
     setIsLabelHovered(false);
     setDisplayValue(value);
+    setSmoothValue(value);
     setInputValue(String(value));
   }, [disabled, value]);
 
@@ -157,6 +173,7 @@ const Slider = ({
       if (clampedValue !== value && !isNaN(clampedValue)) {
         isWheelActivelyChangingRef.current = true;
         setDisplayValue(clampedValue);
+        setSmoothValue(clampedValue);
 
         if (wheelTimeoutRef.current !== undefined) {
           window.clearTimeout(wheelTimeoutRef.current);
@@ -191,23 +208,38 @@ const Slider = ({
 
     const handlePointerMove = (e: MouseEvent | TouchEvent) => {
       let clientX: number;
+      let clientY: number;
       let shiftKey: boolean;
+      let isTouch: boolean;
 
       if ('touches' in e) {
         if (e.touches.length === 0) return;
         clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
         shiftKey = hasFineAdjustmentModifier(e);
+        isTouch = true;
         if (e.cancelable) e.preventDefault();
       } else {
         clientX = (e as MouseEvent).clientX;
+        clientY = (e as MouseEvent).clientY;
         shiftKey = hasFineAdjustmentModifier(e);
+        isTouch = false;
       }
 
       const deltaX = clientX - lastPointerXRef.current;
       const { min: curMin, max: curMax } = rangeRef.current;
 
-      const multiplier = shiftKey ? FINE_ADJUSTMENT_MULTIPLIER : 1;
-      const deltaValue = (deltaX / sliderWidth) * (curMax - curMin) * multiplier;
+      // A finger drifts vertically on its own, so only the pointer earns the
+      // scrubby refinement; touch relies on the travel ratio alone.
+      let precision = 1;
+      if (!isTouch && dragOriginYRef.current !== null) {
+        const verticalDistance = Math.abs(clientY - dragOriginYRef.current);
+        precision = Math.max(MIN_PRECISION, 1 / (1 + verticalDistance / PRECISION_FALLOFF_PX));
+      }
+
+      const multiplier = (shiftKey ? FINE_ADJUSTMENT_MULTIPLIER : 1) * precision;
+      const travel = sliderWidth * DRAG_TRAVEL_RATIO;
+      const deltaValue = (deltaX / travel) * (curMax - curMin) * multiplier;
 
       const prevAccumulated = accumulatedValueRef.current;
       accumulatedValueRef.current = Math.max(curMin, Math.min(curMax, prevAccumulated + deltaValue));
@@ -221,11 +253,13 @@ const Slider = ({
 
       const snappedValue = snapToStepRef.current(accumulatedValueRef.current);
 
+      setSmoothValue(accumulatedValueRef.current);
       setDisplayValue(snappedValue);
       onChangeRef.current({ target: { value: snappedValue } });
     };
 
     const handlePointerUp = () => {
+      dragOriginYRef.current = null;
       lastUpTime.current = Date.now();
       pendingTouchRef.current = null;
       suppressTouchChangeRef.current = false;
@@ -263,6 +297,7 @@ const Slider = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
       setDisplayValue(value);
+      setSmoothValue(value);
       return;
     }
 
@@ -283,6 +318,7 @@ const Slider = ({
       const easedFraction = easeInOut(linearFraction);
       const currentValue = startValue + (endValue - startValue) * easedFraction;
       setDisplayValue(currentValue);
+      setSmoothValue(currentValue);
 
       if (linearFraction < 1) {
         animationFrameRef.current = requestAnimationFrame(animate);
@@ -330,6 +366,7 @@ const Slider = ({
 
     if (!isDragging) {
       setDisplayValue(Number(e.target.value));
+      setSmoothValue(Number(e.target.value));
       onChange(e);
     }
   };
@@ -350,9 +387,11 @@ const Slider = ({
 
     accumulatedValueRef.current = rawValue;
     lastPointerXRef.current = e.clientX;
+    dragOriginYRef.current = e.clientY;
 
     setIsDragging(true);
     setDisplayValue(snappedValue);
+    setSmoothValue(snappedValue);
     onChange({ target: { value: snappedValue } });
   };
 
@@ -423,6 +462,7 @@ const Slider = ({
 
     setIsDragging(true);
     setDisplayValue(snappedValue);
+    setSmoothValue(snappedValue);
     onChange({ target: { value: snappedValue } });
   };
 
@@ -607,9 +647,9 @@ const Slider = ({
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
           onTouchCancel={handleTouchEnd}
-          step={String(step)}
+          step={isDragging ? 'any' : String(step)}
           type="range"
-          value={displayValue}
+          value={thumbValue}
         />
       </div>
     </div>

@@ -42,6 +42,10 @@ interface CurveGraphProps {
   onDragStateChange?: (isDragging: boolean) => void;
 }
 
+// Held shift or alt scales curve movement down, since a point otherwise tracks
+// the cursor one to one across a panel only a few hundred pixels wide.
+const CURVE_FINE_MULTIPLIER = 0.15;
+
 const DEFAULT_POINT_CURVES = getDefaultCurves();
 
 function buildParametricPoints(settings: ParametricCurveSettings): Array<Coord> {
@@ -254,6 +258,9 @@ export default function CurveGraph({
   const svgRef = useRef<SVGSVGElement>(null);
   const splitterContainerRef = useRef<HTMLDivElement>(null);
   const activeChannelRef = useRef(activeChannel);
+  // Accumulates scaled movement so the modifier can be pressed or released
+  // mid-drag, and so grabbing a point no longer snaps it to the cursor.
+  const curveDragRef = useRef<{ x: number; y: number; rawX: number; rawY: number } | null>(null);
   const draggingIndexRef = useRef<number | null>(null);
   const localPointsRef = useRef<Array<Coord> | null>(null);
   const localParametricSettingsRef = useRef<ParametricCurveSettings | null>(null);
@@ -389,8 +396,23 @@ export default function CurveGraph({
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
 
         const rect = svg.getBoundingClientRect();
-        let x = Math.max(0, Math.min(255, ((clientX - rect.left) / rect.width) * 255));
-        const y = Math.max(0, Math.min(255, 255 - ((clientY - rect.top) / rect.height) * 255));
+        const rawX = ((clientX - rect.left) / rect.width) * 255;
+        const rawY = 255 - ((clientY - rect.top) / rect.height) * 255;
+
+        if (curveDragRef.current === null) {
+          const grabbed = currentPoints[index];
+          curveDragRef.current = { x: grabbed.x, y: grabbed.y, rawX, rawY };
+        }
+
+        const drag = curveDragRef.current;
+        const scale = !e.touches && (e.shiftKey || e.altKey) ? CURVE_FINE_MULTIPLIER : 1;
+        drag.x = Math.max(0, Math.min(255, drag.x + (rawX - drag.rawX) * scale));
+        drag.y = Math.max(0, Math.min(255, drag.y + (rawY - drag.rawY) * scale));
+        drag.rawX = rawX;
+        drag.rawY = rawY;
+
+        let x = drag.x;
+        const y = drag.y;
 
         const newPoints = [...currentPoints];
         const SNAP_THRESHOLD = 5;
@@ -403,6 +425,9 @@ export default function CurveGraph({
         const maxX = index === currentPoints.length - 1 ? 255 : nextX - 0.01;
 
         x = Math.max(minX, Math.min(maxX, x));
+        // Write the constrained value back so a point held against a neighbour
+        // does not build up travel the user then has to undo.
+        drag.x = x;
         newPoints[index] = { x, y };
 
         localPointsRef.current = newPoints;
@@ -418,6 +443,7 @@ export default function CurveGraph({
     };
 
     const handleUp = () => {
+      curveDragRef.current = null;
       setDraggingPointIndex(null);
       setDraggingSplitKey(null);
       draggingIndexRef.current = null;
