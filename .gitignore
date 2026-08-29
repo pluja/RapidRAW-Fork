@@ -41,3 +41,6 @@ src-tauri/libs/
 
 # bench/replay.js result dumps
 bench/out/
+# Local notes and agent instructions stay untracked
+*.md
+!README.md
