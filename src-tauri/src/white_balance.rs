@@ -4,6 +4,10 @@
 //! is perceptually even: 100 K at 3000 K is a large shift, at 10000 K it is
 //! invisible.
 
+// Wired into the pipeline by the shader and adjustment plumbing that follows;
+// until then nothing outside the tests calls into here.
+#![allow(dead_code)]
+
 use crate::color_space::{self, Mat3};
 
 /// Mireds per unit of slider travel, so the full -100..100 range spans roughly
