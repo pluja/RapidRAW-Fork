@@ -32,7 +32,11 @@ const FINE_ADJUSTMENT_MULTIPLIER = 0.2;
 // Pointer travel that crosses the whole range, in pixels. Deliberately not a
 // multiple of the track: tying it to the track made sensitivity follow panel
 // width, so narrowing a row to fit a label beside it would undo the feel.
-const FULL_RANGE_TRAVEL_PX = 1300;
+//
+// This was twice as far until the rows became a single line. The hand movement
+// was unchanged, but the thumb then had a third of the track to cross, so it
+// crawled and the slider read as stuck.
+const FULL_RANGE_TRAVEL_PX = 650;
 
 // Dragging away from the slider vertically refines it, the way scrubby controls
 // in compositing apps do. Continuous, and needs no modifier held.
