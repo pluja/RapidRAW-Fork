@@ -19,28 +19,29 @@
 
 # RapidRAW-Fork
 
-A fork of [RapidRAW](https://github.com/CyberTimon/RapidRAW) by CyberTimon. I keep it in sync with upstream. I change one thing: colour.
+A fork of [RapidRAW](https://github.com/CyberTimon/RapidRAW) by CyberTimon. I keep it in sync with upstream. I change one thing: color.
 
 ## What is different
 
-Your camera records colours that sRGB cannot hold. Upstream converts to sRGB before you edit, so those colours are already flattened by the time you move a slider. In one Fujifilm X-S20 photo that affected half a percent of pixels, mostly sunlit leaves, and faded another 4% in the bright areas toward grey. This fork keeps the wider colours until the last step, so greens and skies hold up when you push them.
+Your camera records colors sRGB can't actually hold. Upstream converts everything to sRGB before you start editing, so those colors are already gone by the time you touch a slider. This fork keeps the wide-gamut data until the last step, which means greens and skies don't fall apart when you push them.
 
-Because of that, four more things work better:
+A few other things work better because of that:
 
-- **White balance.** The slider now uses real colour temperature. Upstream multiplies red, green and blue by fixed numbers. Here a step near one end of the slider does as much as a step in the middle.
-- **Camera profiles.** Cameras ship two colour matrices, one for warm light and one for daylight. Upstream uses the daylight one and ignores the other. This fork mixes them to match the light in the photo, so tungsten and candlelight look right.
-- **Hue, saturation and the colour mixer** run in Oklch. Pushing saturation used to shift the colour too: an orange moved 12.7 degrees, a deep blue 9.8. They stay put now.
-- **The colour mixer can show you what it affects.** Switch it on and everything outside the chosen colour turns grey, like Capture One.
-
-Sliders and curve points are easier to control, and the panels take less room.
+- **White balance.** The slider uses real color temperature now. Upstream just multiplies R, G and B by fixed numbers, so a step at one end of the slider does something completely different from a step in the middle. In this fork they actually match.
+- **Camera profiles.** Most cameras ship two color matrices, one for warm light and one for daylight. Upstream uses the daylight one and ignores the other. This fork blends them to match the light in the shot, so tungsten and candlelight look right instead of weird.
+- **Hue, saturation and the color mixer** run in Oklch. Pushing saturation used to drag the hue around as well (an orange would shift 12.7°, a deep blue 9.8°). They stay put now.
+- **The HSL mixer can show you what it's actually affecting.** Turn it on and everything outside the chosen color goes grey, same idea as Capture One.
+- **Sharpening masking.** New slider that keeps sharpening off flat areas like skies and skin, so you're not just sharpening noise. Drag it and the image turns into the mask itself, black and white: white gets sharpened, black is left alone. Lightroom hides this behind Alt, which KDE steals for moving windows, so here it just shows while you drag.
+- **Disable subsections.** Instead of disabling a whole section (Color), you can disable just one part of it (Color > White Balance) to compare what it's doing.
+- Sliders and curve points are less sensitive (the movement is smoother and it's easier to be precise), and the panels take less room.
 
 ## Read this before opening old edits
 
-Colours look different here. Photos you edited in upstream RapidRAW will not match. The colour bands cover different ranges too, so saved presets need redoing.
+Colors look different here. Photos you edited in upstream RapidRAW will not match. The color bands cover different ranges too, so saved presets need redoing.
 
 ## Disclosure
 
-I wrote this code with Claude. Each commit explains the measurement behind the change, and 56 tests cover the colour maths. I reviewed and tested it. Decide for yourself what that is worth.
+I wrote this code with AI. Each commit explains the measurement behind the change, and 57 tests cover the color maths. I reviewed and tested it. Decide for yourself what that is worth.
 
 ## Upstream
 
