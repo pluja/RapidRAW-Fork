@@ -2527,6 +2527,7 @@ pub fn move_files(
 fn strip_view_only_state(adjustments: &mut Value) {
     if let Some(map) = adjustments.as_object_mut() {
         map.remove("colorMixerPreview");
+        map.remove("sharpenMaskPreview");
     }
 }
 

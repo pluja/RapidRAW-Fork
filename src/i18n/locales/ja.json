@@ -111,7 +111,7 @@
       "structure": "構造",
       "threshold": "しきい値",
       "masking": "マスク",
-      "maskingTooltip": "ドラッグ中に Alt を押すとシャープ処理の範囲を表示"
+      "maskingTooltip": "平坦な部分でシャープ処理をどれだけ抑えるか。ドラッグすると適用範囲を表示"
     },
     "effects": {
       "amount": "適用量",

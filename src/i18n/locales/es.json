@@ -111,7 +111,7 @@
       "structure": "Estructura",
       "threshold": "Umbral",
       "masking": "Máscara",
-      "maskingTooltip": "Mantén Alt mientras arrastras para ver qué se enfoca"
+      "maskingTooltip": "Cuánto enfoque se retiene en zonas planas. Arrastra para ver dónde se aplica"
     },
     "effects": {
       "amount": "Cantidad",

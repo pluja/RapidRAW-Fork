@@ -111,7 +111,7 @@
       "structure": "Structure",
       "threshold": "Seuil",
       "masking": "Masquage",
-      "maskingTooltip": "Maintenez Alt en faisant glisser pour voir ce qui est accentué"
+      "maskingTooltip": "Quantité d'accentuation retenue dans les zones plates. Faites glisser pour voir où elle s'applique"
     },
     "effects": {
       "amount": "Intensité",

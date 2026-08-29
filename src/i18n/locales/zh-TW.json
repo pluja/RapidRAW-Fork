@@ -111,7 +111,7 @@
       "structure": "結構",
       "threshold": "臨界值",
       "masking": "遮罩",
-      "maskingTooltip": "拖曳時按住 Alt 可檢視銳利化範圍"
+      "maskingTooltip": "在平坦區域抑制多少銳利化。拖曳可檢視作用範圍"
     },
     "effects": {
       "amount": "數量",

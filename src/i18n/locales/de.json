@@ -111,7 +111,7 @@
       "structure": "Struktur",
       "threshold": "Schwellenwert",
       "masking": "Maskierung",
-      "maskingTooltip": "Alt gedrückt halten beim Ziehen, um zu sehen, was geschärft wird"
+      "maskingTooltip": "Wie viel Schärfung von flächigen Bereichen ferngehalten wird. Ziehen, um zu sehen, wo sie wirkt"
     },
     "effects": {
       "amount": "Stärke",

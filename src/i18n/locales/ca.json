@@ -111,7 +111,7 @@
       "structure": "Estructura",
       "threshold": "Llindar",
       "masking": "Màscara",
-      "maskingTooltip": "Mantén Alt mentre arrossegues per veure què s'enfoca"
+      "maskingTooltip": "Quant enfocament es reté a les zones planes. Arrossega per veure on s'aplica"
     },
     "effects": {
       "amount": "Quantitat",

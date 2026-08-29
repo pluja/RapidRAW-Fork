@@ -111,7 +111,7 @@
       "structure": "结构",
       "threshold": "阈值",
       "masking": "蒙版",
-      "maskingTooltip": "拖动时按住 Alt 可查看锐化范围"
+      "maskingTooltip": "在平坦区域抑制多少锐化。拖动可查看作用范围"
     },
     "effects": {
       "amount": "数量",

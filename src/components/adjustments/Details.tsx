@@ -25,32 +25,16 @@ export default function DetailsPanel({
 }: DetailsPanelProps) {
   const groups = useGroupVisibility('details', adjustments, setAdjustments);
 
-  // Lightroom shows this mask while Alt is held during a drag, so the slider is
-  // set by looking at what it protects. Alt has to be read from the pointer as
-  // well as the keyboard, since holding it before the drag starts fires no key
-  // event.
+  // The mask shows while the slider is being dragged, which is when it is worth
+  // seeing. Lightroom puts this behind alt, but KDE claims alt-drag for moving
+  // windows, and a modifier earns nothing here anyway.
   const [isMaskingDrag, setIsMaskingDrag] = useState(false);
-  const [isAltHeld, setIsAltHeld] = useState(false);
 
-  useEffect(() => {
-    if (!isMaskingDrag) {
-      return;
-    }
-    const follow = (e: KeyboardEvent) => setIsAltHeld(e.altKey);
-    window.addEventListener('keydown', follow);
-    window.addEventListener('keyup', follow);
-    return () => {
-      window.removeEventListener('keydown', follow);
-      window.removeEventListener('keyup', follow);
-    };
-  }, [isMaskingDrag]);
-
-  const showMask = isMaskingDrag && isAltHeld;
   useEffect(() => {
     setAdjustments((prev: Adjustments) =>
-      prev.sharpenMaskPreview === showMask ? prev : { ...prev, sharpenMaskPreview: showMask },
+      prev.sharpenMaskPreview === isMaskingDrag ? prev : { ...prev, sharpenMaskPreview: isMaskingDrag },
     );
-  }, [showMask, setAdjustments]);
+  }, [isMaskingDrag, setAdjustments]);
   const { t } = useTranslation();
 
   // Sliders hand back a number, which parseInt only accepted because JavaScript
@@ -96,10 +80,7 @@ export default function DetailsPanel({
             defaultValue={15}
             fillOrigin="min"
           />
-          <div
-            onPointerDownCapture={(e: React.PointerEvent) => setIsAltHeld(e.altKey)}
-            data-tooltip={t('adjustments.details.maskingTooltip')}
-          >
+          <div data-tooltip={t('adjustments.details.maskingTooltip')}>
             <Slider
               label={t('adjustments.details.masking')}
               max={100}
@@ -111,9 +92,6 @@ export default function DetailsPanel({
               value={adjustments.sharpenMasking ?? 0}
               onDragStateChange={(dragging: boolean) => {
                 setIsMaskingDrag(dragging);
-                if (!dragging) {
-                  setIsAltHeld(false);
-                }
                 onDragStateChange?.(dragging);
               }}
               defaultValue={0}

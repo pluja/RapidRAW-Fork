@@ -111,7 +111,7 @@
       "structure": "Estrutura",
       "threshold": "Limiar",
       "masking": "Máscara",
-      "maskingTooltip": "Segure Alt ao arrastar para ver o que é nitidez"
+      "maskingTooltip": "Quanta nitidez é retida em áreas planas. Arraste para ver onde se aplica"
     },
     "effects": {
       "amount": "Quantidade",

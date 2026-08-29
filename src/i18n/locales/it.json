@@ -111,7 +111,7 @@
       "structure": "Struttura",
       "threshold": "Soglia",
       "masking": "Mascheratura",
-      "maskingTooltip": "Tieni premuto Alt mentre trascini per vedere cosa viene nitidizzato"
+      "maskingTooltip": "Quanta nitidezza viene trattenuta nelle aree piatte. Trascina per vedere dove si applica"
     },
     "effects": {
       "amount": "Quantità",

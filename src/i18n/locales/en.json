@@ -111,7 +111,7 @@
       "structure": "Structure",
       "threshold": "Threshold",
       "masking": "Masking",
-      "maskingTooltip": "Hold Alt while dragging to see what is sharpened"
+      "maskingTooltip": "How much sharpening is held back from flat areas. Drag to see where it applies"
     },
     "effects": {
       "amount": "Amount",

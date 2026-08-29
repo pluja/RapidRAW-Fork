@@ -111,7 +111,7 @@
       "structure": "구조",
       "threshold": "임계값",
       "masking": "마스킹",
-      "maskingTooltip": "드래그하는 동안 Alt를 누르면 선명하게 처리되는 영역이 표시됩니다"
+      "maskingTooltip": "평탄한 영역에서 선명 효과를 얼마나 억제할지. 드래그하면 적용 범위가 표시됩니다"
     },
     "effects": {
       "amount": "양",

@@ -111,7 +111,7 @@
       "structure": "Struktura",
       "threshold": "Próg",
       "masking": "Maskowanie",
-      "maskingTooltip": "Przytrzymaj Alt podczas przeciągania, aby zobaczyć, co jest wyostrzane"
+      "maskingTooltip": "Ile wyostrzania jest wstrzymywane na płaskich obszarach. Przeciągnij, aby zobaczyć, gdzie działa"
     },
     "effects": {
       "amount": "Ilość",
