@@ -17,6 +17,39 @@
 
 </div>
 
+# RapidRAW-Fork
+
+A fork of [RapidRAW](https://github.com/CyberTimon/RapidRAW) by CyberTimon. I keep it in sync with upstream. I change one thing: colour.
+
+## What is different
+
+Your camera records colours that sRGB cannot hold. Upstream converts to sRGB before you edit, so those colours are already flattened by the time you move a slider. In one Fujifilm X-S20 photo that affected half a percent of pixels, mostly sunlit leaves, and faded another 4% in the bright areas toward grey. This fork keeps the wider colours until the last step, so greens and skies hold up when you push them.
+
+Because of that, four more things work better:
+
+- **White balance.** The slider now uses real colour temperature. Upstream multiplies red, green and blue by fixed numbers. Here a step near one end of the slider does as much as a step in the middle.
+- **Camera profiles.** Cameras ship two colour matrices, one for warm light and one for daylight. Upstream uses the daylight one and ignores the other. This fork mixes them to match the light in the photo, so tungsten and candlelight look right.
+- **Hue, saturation and the colour mixer** run in Oklch. Pushing saturation used to shift the colour too: an orange moved 12.7 degrees, a deep blue 9.8. They stay put now.
+- **The colour mixer can show you what it affects.** Switch it on and everything outside the chosen colour turns grey, like Capture One.
+
+Sliders and curve points are easier to control, and the panels take less room.
+
+## Read this before opening old edits
+
+Colours look different here. Photos you edited in upstream RapidRAW will not match. The colour bands cover different ranges too, so saved presets need redoing.
+
+## Disclosure
+
+I wrote this code with Claude. Each commit explains the measurement behind the change, and 56 tests cover the colour maths. I reviewed and tested it. Decide for yourself what that is worth.
+
+## Upstream
+
+I send small fixes back to CyberTimon as pull requests. For downloads, support and the original project, go to [RapidRAW](https://github.com/CyberTimon/RapidRAW).
+
+---
+
+Everything below is upstream's README.
+
 # RapidRAW
 
 > A beautiful, non-destructive, and GPU-accelerated RAW image editor built with performance in mind.
