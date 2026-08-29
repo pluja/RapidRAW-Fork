@@ -339,9 +339,15 @@ fn safe_embedded_preview_fallback(bytes: &[u8], path: &str) -> Option<DynamicIma
     }
 }
 
+/// Prepares an embedded JPEG preview as working-space data.
+///
+/// The preview stands in for a develop that failed, and callers identify it as
+/// raw by file extension, so it has to leave here in the same space a developed
+/// raw would.
 fn linearize_embedded_preview(preview: DynamicImage) -> DynamicImage {
     let preview = DynamicImage::ImageRgb32F(preview.to_rgb32f());
-    let mut linear_preview = apply_srgb_to_linear(preview).into_rgb32f();
+    let preview = crate::image_processing::apply_srgb_to_prophoto(apply_srgb_to_linear(preview));
+    let mut linear_preview = preview.into_rgb32f();
     for pixel in linear_preview.pixels_mut() {
         pixel[0] *= 0.4;
         pixel[1] *= 0.4;

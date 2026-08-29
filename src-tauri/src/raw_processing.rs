@@ -44,17 +44,16 @@ fn is_linear_raw_format(raw_image: &RawImage) -> bool {
 /// case the caller leaves rawler's own sRGB calibration in place rather than
 /// rendering the image wrong.
 fn camera_to_working_space(raw_image: &RawImage) -> Option<Mat3> {
-    if raw_image.cpp == 4 {
-        return None;
-    }
-
     let (_illuminant, matrix) = raw_image
         .color_matrix
         .iter()
         .find(|(illuminant, _)| **illuminant == Illuminant::D65)
         .or_else(|| raw_image.color_matrix.iter().next())?;
 
-    if matrix.len() < 9 {
+    // A four-colour sensor carries twelve coefficients and demosaics to a
+    // four-channel intermediate that no 3x3 can resolve. Truncating to the
+    // first nine would build a plausible-looking matrix for the wrong sensor.
+    if matrix.len() != 9 {
         return None;
     }
 
@@ -163,6 +162,10 @@ fn develop_internal(
             .retain(|&step| step != ProcessingStep::Calibrate);
     }
 
+    // Whatever we did not calibrate ourselves, rawler resolved to sRGB. Lifting
+    // that into the working space below keeps exactly one space downstream.
+    let rawler_calibrated = developer.steps.contains(&ProcessingStep::Calibrate);
+
     raw_image.wb_coeffs =
         crate::multi_exposure::neutralize_wb_if_multiexposure(raw_image.wb_coeffs, file_bytes);
 
@@ -212,8 +215,18 @@ fn develop_internal(
                     b = srgb_to_linear(b.clamp(0.0, 1.0));
                 }
 
-                if let Some(matrix) = working_transform {
-                    let working = color_space::apply(&matrix, [r * wb[0], g * wb[1], b * wb[2]]);
+                let working = if let Some(matrix) = working_transform {
+                    Some(color_space::apply(
+                        &matrix,
+                        [r * wb[0], g * wb[1], b * wb[2]],
+                    ))
+                } else if rawler_calibrated {
+                    Some(color_space::srgb_to_prophoto([r, g, b]))
+                } else {
+                    None
+                };
+
+                if let Some(working) = working {
                     // The residual out-of-gamut fraction in ProPhoto is a small
                     // fraction of a percent, and letting it stay negative would
                     // reach operators that take sqrt and pow of their input.

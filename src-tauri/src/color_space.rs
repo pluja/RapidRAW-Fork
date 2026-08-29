@@ -160,6 +160,19 @@ pub fn prophoto_to_srgb_cached() -> &'static Mat3 {
     CACHED.get_or_init(prophoto_to_srgb)
 }
 
+pub fn srgb_to_prophoto_cached() -> &'static Mat3 {
+    static CACHED: OnceLock<Mat3> = OnceLock::new();
+    CACHED.get_or_init(|| invert(&prophoto_to_srgb()).expect("sRGB primaries are independent"))
+}
+
+/// Lifts linear sRGB into the ProPhoto working space.
+///
+/// Used wherever data reaches the pipeline already resolved to sRGB, so that
+/// exactly one working space exists downstream.
+pub fn srgb_to_prophoto(c: [f32; 3]) -> [f32; 3] {
+    apply(srgb_to_prophoto_cached(), c)
+}
+
 /// Converts linear ProPhoto to linear sRGB, desaturating a colour outside the
 /// destination gamut toward its own luminance rather than clamping per channel,
 /// which would shift both its hue and its luminance.
@@ -176,7 +189,9 @@ pub fn prophoto_to_srgb_gamut_clipped(c: [f32; 3]) -> [f32; 3] {
         return [0.0; 3];
     }
     let t = luma / (luma - min_c);
-    srgb.map(|v| luma + (v - luma) * t)
+    // Rounding can leave the darkest channel fractionally below zero, which
+    // becomes NaN in the powf of a downstream display curve.
+    srgb.map(|v| (luma + (v - luma) * t).max(0.0))
 }
 
 #[cfg(test)]
@@ -399,6 +414,30 @@ mod tests {
         }
         for c in 0..3 {
             assert!((PROPHOTO_LUMA[c] - SHADER_LUMA[c]).abs() < 1e-7);
+        }
+    }
+
+    #[test]
+    fn srgb_to_prophoto_round_trips() {
+        for c in [[0.2, 0.5, 0.9], [1.0, 0.0, 0.0], [0.05, 0.05, 0.05]] {
+            let back = prophoto_to_srgb_gamut_clipped(srgb_to_prophoto(c));
+            assert_close(back, c, 1e-4, "sRGB round trip");
+        }
+    }
+
+    #[test]
+    fn gamut_clip_never_returns_negative() {
+        for c in [
+            [0.0, 1.0, 0.0],
+            [1.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 1.0, 0.0],
+        ] {
+            let out = prophoto_to_srgb_gamut_clipped(c);
+            assert!(
+                out.iter().all(|v| *v >= 0.0),
+                "negative channel survived for {c:?}: {out:?}"
+            );
         }
     }
 

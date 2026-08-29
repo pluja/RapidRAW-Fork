@@ -1145,6 +1145,35 @@ pub fn apply_cpu_default_raw_processing(image: &mut DynamicImage) {
     *image = DynamicImage::ImageRgb32F(f32_image);
 }
 
+/// Lifts linear sRGB data into the ProPhoto working space.
+///
+/// Used at every entry point that produces sRGB rather than camera-native data,
+/// so that everything downstream of image loading is in one working space.
+pub fn apply_srgb_to_prophoto(mut image: DynamicImage) -> DynamicImage {
+    use crate::color_space::srgb_to_prophoto;
+
+    match &mut image {
+        DynamicImage::ImageRgb32F(img) => {
+            img.par_chunks_mut(3).for_each(|p| {
+                let c = srgb_to_prophoto([p[0], p[1], p[2]]);
+                p[0] = c[0];
+                p[1] = c[1];
+                p[2] = c[2];
+            });
+        }
+        DynamicImage::ImageRgba32F(img) => {
+            img.par_chunks_mut(4).for_each(|p| {
+                let c = srgb_to_prophoto([p[0], p[1], p[2]]);
+                p[0] = c[0];
+                p[1] = c[1];
+                p[2] = c[2];
+            });
+        }
+        _ => {}
+    }
+    image
+}
+
 /// Converts linear ProPhoto working-space data to linear sRGB for output.
 pub fn apply_prophoto_to_srgb(mut image: DynamicImage) -> DynamicImage {
     apply_prophoto_to_srgb_in_place(&mut image);
