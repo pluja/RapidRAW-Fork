@@ -230,6 +230,19 @@ fn get_luma(c: vec3<f32>) -> f32 {
     return dot(c, LUMA_COEFF);
 }
 
+/// Luminance for data that has already left the working space through the
+/// display transform, where ProPhoto weights would misweight blue by ~840x.
+fn get_display_luma(c: vec3<f32>) -> f32 {
+    return dot(c, SRGB_LUMA);
+}
+
+/// Brings a sample of input_texture into the working space. Raw input is
+/// already there; non-raw input is sRGB-encoded, exactly as main assumes for
+/// the primary sample.
+fn input_to_working(c: vec3<f32>) -> vec3<f32> {
+    return srgb_to_prophoto(srgb_to_linear(c));
+}
+
 fn prophoto_to_srgb(c: vec3<f32>) -> vec3<f32> {
     return vec3<f32>(
         dot(PROPHOTO_TO_SRGB_R0, c),
@@ -444,7 +457,7 @@ fn apply_tonal_adjustments(
     if (is_raw == 1u) {
         blurred_linear = blurred_color_input_space;
     } else {
-        blurred_linear = srgb_to_linear(blurred_color_input_space);
+        blurred_linear = input_to_working(blurred_color_input_space);
     }
 
     if (wh != 0.0) {
@@ -786,7 +799,7 @@ fn apply_local_contrast(
     if (is_raw == 1u) {
         blurred_color_linear = blurred_color_input_space;
     } else {
-        blurred_color_linear = srgb_to_linear(blurred_color_input_space);
+        blurred_color_linear = input_to_working(blurred_color_input_space);
     }
 
     if (amount < 0.0) {
@@ -832,9 +845,10 @@ fn apply_local_contrast(
 }
 
 fn sharpen_perc(c: vec3<f32>, is_raw: u32) -> f32 {
-    let y = max(get_luma(c), 0.0);
-    if (is_raw == 1u) { return sqrt(y); }
-    return y;
+    if (is_raw == 1u) {
+        return sqrt(max(get_luma(c), 0.0));
+    }
+    return max(get_display_luma(c), 0.0);
 }
 
 fn sharpen_tap(coords: vec2<i32>, max_idx: vec2<i32>, is_raw: u32) -> f32 {
@@ -881,15 +895,15 @@ fn apply_sharpen(
 
     if (amount < 0.0) {
         var b1_lin = b1_in;
-        if (is_raw == 0u) { b1_lin = srgb_to_linear(b1_in); }
+        if (is_raw == 0u) { b1_lin = input_to_working(b1_in); }
         return mix(color, b1_lin, clamp(-amount * 0.5, 0.0, 1.0));
     }
 
     var color_enc = color;
     if (is_raw == 0u) {
-        color_enc = linear_to_srgb_extended(color);
+        color_enc = linear_to_srgb_extended(prophoto_to_srgb(color));
     }
-    let l = select(get_luma(color_enc), sqrt(max(get_luma(color), 0.0)), is_raw == 1u);
+    let l = select(get_display_luma(color_enc), sqrt(max(get_luma(color), 0.0)), is_raw == 1u);
     let l1 = sharpen_perc(b1_in, is_raw);
     let l2 = sharpen_perc(b2_in, is_raw);
 
@@ -976,7 +990,7 @@ fn apply_sharpen(
     if (is_raw == 1u) {
         return color * (ratio * ratio);
     }
-    return srgb_to_linear(max(color_enc * ratio, vec3<f32>(0.0)));
+    return input_to_working(max(color_enc * ratio, vec3<f32>(0.0)));
 }
 
 fn apply_centre_local_contrast(
@@ -1054,7 +1068,7 @@ fn apply_dehaze(color: vec3<f32>, blurred_color_input_space: vec3<f32>, is_raw: 
     if (is_raw == 1u) {
         blurred_linear = blurred_color_input_space;
     } else {
-        blurred_linear = srgb_to_linear(blurred_color_input_space);
+        blurred_linear = input_to_working(blurred_color_input_space);
     }
 
     let atmospheric_light = vec3<f32>(0.95, 0.97, 1.0);
@@ -1151,7 +1165,7 @@ fn apply_noise_reduction(
                 let coord = clamp(coords_i + off, vec2<i32>(0), max_idx);
 
                 var s = textureLoad(input_texture, vec2<u32>(coord), 0).rgb;
-                if (is_raw == 0u) { s = srgb_to_linear(s); }
+                if (is_raw == 0u) { s = input_to_working(s); }
                 let s_luma = get_luma(max(s, vec3<f32>(0.0)));
                 samp_luma[idx] = s_luma;
                 samp_spat[idx] = exp(f32(dx * dx + dy * dy) * l_spat_n);
@@ -1241,7 +1255,7 @@ fn apply_noise_reduction(
                 let coord = clamp(coords_i + off, vec2<i32>(0), max_idx);
                 var s = textureLoad(input_texture, vec2<u32>(coord), 0).rgb;
 
-                if (is_raw == 0u) { s = srgb_to_linear(s); }
+                if (is_raw == 0u) { s = input_to_working(s); }
 
                 let s_safe = max(s, vec3<f32>(0.0));
                 let s_luma = get_luma(s_safe);
@@ -1429,9 +1443,9 @@ fn apply_all_curves(color: vec3<f32>, luma_curve: array<Point, 16>, luma_curve_c
             apply_curve(color.g, green_curve, green_curve_count),
             apply_curve(color.b, blue_curve, blue_curve_count)
         );
-        let luma_initial = get_luma(color);
+        let luma_initial = get_display_luma(color);
         let luma_target = apply_curve(luma_initial, luma_curve, luma_curve_count);
-        let luma_graded = get_luma(color_graded);
+        let luma_graded = get_display_luma(color_graded);
 
         let d = luma_target - luma_graded;
         var final_color = color_graded + vec3<f32>(d);
@@ -1541,7 +1555,7 @@ fn apply_glow_bloom(
     if (is_raw == 1u) {
         blurred_linear = blurred_color_input_space;
     } else {
-        blurred_linear = srgb_to_linear(blurred_color_input_space);
+        blurred_linear = input_to_working(blurred_color_input_space);
     }
 
     blurred_linear = apply_linear_exposure(blurred_linear, exp);
@@ -1609,7 +1623,7 @@ fn apply_halation(
     if (is_raw == 1u) {
         blurred_linear = blurred_color_input_space;
     } else {
-        blurred_linear = srgb_to_linear(blurred_color_input_space);
+        blurred_linear = input_to_working(blurred_color_input_space);
     }
 
     blurred_linear = apply_linear_exposure(blurred_linear, exp);
@@ -1925,7 +1939,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         let amount = adjustments.global.grain_amount * 0.5;
         let grain_frequency = (1.0 / max(adjustments.global.grain_size, 0.1)) / scale;
         let roughness = adjustments.global.grain_roughness;
-        let luma = max(0.0, get_luma(final_rgb));
+        let luma = max(0.0, get_display_luma(final_rgb));
         let luma_mask = smoothstep(0.0, 0.15, luma) * (1.0 - smoothstep(0.6, 1.0, luma));
         let base_coord = coord * grain_frequency;
         let rough_coord = coord * grain_frequency * 0.6;

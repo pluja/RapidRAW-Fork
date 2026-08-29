@@ -14,7 +14,13 @@ struct FlareParams {
 @group(0) @binding(2) var<uniform> params: FlareParams;
 @group(0) @binding(3) var input_sampler: sampler;
 
+/// Raw input reaches this pass in the linear ProPhoto working space, while
+/// non-raw input is still sRGB and is linearised below, so the weights have to
+/// follow whichever space the caller supplied.
 fn get_luma(c: vec3<f32>) -> f32 {
+    if (params.is_raw == 1u) {
+        return dot(c, vec3<f32>(0.2880402, 0.7118741, 0.0000857));
+    }
     return dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
 }
 
