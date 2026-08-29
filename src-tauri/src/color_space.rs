@@ -37,6 +37,9 @@ const WHITE_D65: [f32; 3] = [0.95047, 1.00000, 1.08883];
 /// Relative luminance weights for ProPhoto primaries.
 ///
 /// Replaces the Rec.709 weights that are only correct for an sRGB working space.
+/// Consumed by the shader as a literal rather than from here, so this is the
+/// reference the shader constant is asserted against.
+#[allow(dead_code)]
 pub const PROPHOTO_LUMA: [f32; 3] = [
     PROPHOTO_TO_XYZ_D50[1][0],
     PROPHOTO_TO_XYZ_D50[1][1],
