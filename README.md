@@ -31,8 +31,10 @@ A few other things work better because of that:
 - **Camera profiles.** Most cameras ship two color matrices, one for warm light and one for daylight. Upstream uses the daylight one and ignores the other. This fork blends them to match the light in the shot, so tungsten and candlelight look right instead of weird.
 - **Hue, saturation and the color mixer** run in Oklch. Pushing saturation used to drag the hue around as well (an orange would shift 12.7°, a deep blue 9.8°). They stay put now.
 - **The HSL mixer can show you what it's actually affecting.** Turn it on and everything outside the chosen color goes grey, same idea as Capture One.
-- **Sharpening masking.** New slider that keeps sharpening off flat areas like skies and skin, so you're not just sharpening noise. Drag it and the image turns into the mask itself, black and white: white gets sharpened, black is left alone. Lightroom hides this behind Alt, which KDE steals for moving windows, so here it just shows while you drag.
+- **Sharpening masking.** New slider that keeps sharpening off flat areas like skies and skin, so you're not just sharpening noise. Drag it and the image turns into the mask itself, black and white: white gets sharpened, black is left alone. Lightroom hides this behind Alt, here it just shows while you drag.
 - **Disable subsections.** Instead of disabling a whole section (Color), you can disable just one part of it (Color > White Balance) to compare what it's doing.
+- **Grain.** The old one laid the same noise over the whole frame, which reads as digital. This one places grains as particles, so it peaks in the midtones and fades out towards black and white, the way film does. It also keeps its size when you zoom instead of getting coarser.
+- **Library, Develop and Export are separate views.** Tabs at the top switch between them and each keeps its own panels, widths and collapsed sides. Culling no longer means staring at edit sliders you aren't using, which matters on a laptop screen. Ctrl+Alt+1, 2 and 3 switch without the mouse.
 - Sliders and curve points are less sensitive (the movement is smoother and it's easier to be precise), and the panels take less room.
 
 ## Read this before opening old edits
@@ -41,7 +43,7 @@ Colors look different here. Photos you edited in upstream RapidRAW will not matc
 
 ## Disclosure
 
-I wrote this code with AI. Each commit explains the measurement behind the change, and 57 tests cover the color maths. I reviewed and tested it. Decide for yourself what that is worth.
+I wrote this code with AI. Each commit explains the measurement behind the change, and 68 tests cover the color maths. I reviewed and tested it. Decide for yourself what that is worth.
 
 ## Upstream
 
