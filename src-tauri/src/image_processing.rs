@@ -2331,12 +2331,12 @@ fn get_global_adjustments_from_json(
             Some(50.0),
         ),
         grain_amount: get_val("effects.grain", "grainAmount", SCALES.grain_amount, None),
-        grain_size: get_val("effects.grain", "grainSize", SCALES.grain_size, Some(50.0)),
+        grain_size: get_val("effects.grain", "grainSize", SCALES.grain_size, Some(20.0)),
         grain_roughness: get_val(
             "effects.grain",
             "grainRoughness",
             SCALES.grain_roughness,
-            Some(50.0),
+            Some(15.0),
         ),
 
         chromatic_aberration_red_cyan: get_val(

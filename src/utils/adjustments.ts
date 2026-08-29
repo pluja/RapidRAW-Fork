@@ -532,8 +532,8 @@ export const INITIAL_ADJUSTMENTS: Adjustments = {
   flareAmount: 0,
   glowAmount: 0,
   grainAmount: 0,
-  grainRoughness: 50,
-  grainSize: 50,
+  grainRoughness: 15,
+  grainSize: 20,
   halationAmount: 0,
   highlights: 0,
   hsl: {

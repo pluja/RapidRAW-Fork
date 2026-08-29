@@ -424,7 +424,7 @@ export default function EffectsPanel({
                 onDragStateChange={onDragStateChange}
               />
               <Slider
-                defaultValue={25}
+                defaultValue={20}
                 label={t('adjustments.effects.size')}
                 max={100}
                 min={0}
@@ -435,7 +435,7 @@ export default function EffectsPanel({
                 fillOrigin="min"
               />
               <Slider
-                defaultValue={50}
+                defaultValue={15}
                 label={t('adjustments.effects.roughness')}
                 max={100}
                 min={0}
