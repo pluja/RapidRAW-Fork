@@ -2519,6 +2519,17 @@ pub fn move_files(
     Ok(())
 }
 
+/// Removes the state that describes how the user is looking at an image rather
+/// than how it should be developed.
+///
+/// Thumbnails are rendered from the sidecar, so anything left here shows up
+/// across the filmstrip and outlives the session that set it.
+fn strip_view_only_state(adjustments: &mut Value) {
+    if let Some(map) = adjustments.as_object_mut() {
+        map.remove("colorMixerPreview");
+    }
+}
+
 #[tauri::command]
 pub fn save_metadata_and_update_thumbnail(
     path: String,
@@ -2540,6 +2551,7 @@ pub fn save_metadata_and_update_thumbnail(
         );
     }
 
+    strip_view_only_state(&mut final_adjustments);
     metadata.adjustments = final_adjustments;
 
     let json_string = serde_json::to_string_pretty(&metadata).map_err(|e| e.to_string())?;
@@ -2660,6 +2672,7 @@ pub async fn apply_adjustments_to_paths(
                 lens_db.as_deref(),
             );
 
+            strip_view_only_state(&mut new_adjustments);
             existing_metadata.adjustments = new_adjustments;
 
             if let Ok(json_string) = serde_json::to_string_pretty(&existing_metadata) {

@@ -212,7 +212,24 @@ mod tests {
     const SHADER_TRUST_LOW: f32 = 0.30;
     const SHADER_TRUST_HIGH: f32 = 0.70;
     const SHADER_CONFIDENCE_LOW: f32 = 0.002;
-    const SHADER_CONFIDENCE_HIGH: f32 = 0.06;
+    const SHADER_CONFIDENCE_HIGH: f32 = 0.045;
+    const SHADER_BAND_PEAKS: [f32; 8] = [
+        0.68742, 0.59133, 0.54055, 0.59582, 0.85086, 0.78555, 0.43665, 0.45839,
+    ];
+
+    /// The share a band takes for a colour exactly on its own centre.
+    fn band_ceiling(band: usize) -> f32 {
+        let direction = BAND_CENTERS[band].to_radians();
+        let (ux, uy) = (direction.cos(), direction.sin());
+        let mut weights = [0.0f32; 8];
+        let mut total = 0.0;
+        for i in 0..8 {
+            let other = BAND_CENTERS[i].to_radians();
+            weights[i] = ((ux * other.cos() + uy * other.sin()) / SHADER_BAND_SOFTNESS).exp();
+            total += weights[i];
+        }
+        (weights[band] / total - 0.125) / 0.875
+    }
 
     fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
         let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
@@ -260,7 +277,8 @@ mod tests {
         }
         let mut shares = [0.0f32; 8];
         for i in 0..8 {
-            shares[i] = ((weights[i] / total - 0.125) / 0.875).max(0.0) * confidence;
+            let raw = ((weights[i] / total - 0.125) / 0.875).max(0.0);
+            shares[i] = (raw / SHADER_BAND_PEAKS[i]).min(1.0) * confidence;
         }
         (shares, trust)
     }
@@ -393,6 +411,37 @@ mod tests {
     /// band membership and its strength with one exponential made that passage
     /// accelerate and then stop dead, drawing an edge across smooth sky. Keeping
     /// direction and confidence apart has to leave the change gradual.
+    /// The shader carries these as literals; they follow from the band
+    /// geometry and the softness, so a change to either invalidates them.
+    #[test]
+    fn shader_band_ceilings_match_the_geometry() {
+        for band in 0..8 {
+            let computed = band_ceiling(band);
+            assert!(
+                (computed - SHADER_BAND_PEAKS[band]).abs() < 1e-4,
+                "band {band} reaches {computed:.5} but the shader divides by {:.5}",
+                SHADER_BAND_PEAKS[band]
+            );
+        }
+    }
+
+    /// Unevenly spaced centres gave each band a different ceiling, so the same
+    /// slider did half as much work on purple as on aqua. Dividing by the
+    /// ceiling has to leave every band owning its own colour outright.
+    #[test]
+    fn every_band_owns_its_own_colour_equally() {
+        for band in 0..8 {
+            let direction = BAND_CENTERS[band].to_radians();
+            let colour = prophoto_from_oklab([0.6, 0.15 * direction.cos(), 0.15 * direction.sin()]);
+            let (shares, _) = guided_shares(colour, colour);
+            assert!(
+                shares[band] > 0.95,
+                "band {band} took only {:.0}% of its own colour",
+                shares[band] * 100.0
+            );
+        }
+    }
+
     #[test]
     fn a_gradient_through_neutral_stays_gradual() {
         let top = [0.36f32, 0.52, 0.72];
