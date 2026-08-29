@@ -183,17 +183,6 @@ struct HslRange {
     width: f32,
 }
 
-const HSL_RANGES: array<HslRange, 8> = array<HslRange, 8>(
-    HslRange(358.0, 35.0),  // Red
-    HslRange(25.0, 45.0),   // Orange
-    HslRange(60.0, 40.0),   // Yellow
-    HslRange(115.0, 90.0),  // Green
-    HslRange(180.0, 60.0),  // Aqua
-    HslRange(225.0, 60.0),  // Blue
-    HslRange(280.0, 55.0),  // Purple
-    HslRange(330.0, 50.0)   // Magenta
-);
-
 @group(0) @binding(0) var input_texture: texture_2d<f32>;
 @group(0) @binding(1) var output_texture: texture_storage_2d<rgba8unorm, write>;
 @group(0) @binding(2) var<storage, read> adjustments: AllAdjustments;
@@ -362,25 +351,6 @@ fn hsv_to_rgb(c: vec3<f32>) -> vec3<f32> {
     else if (h < 300.0) { rgb_prime = vec3<f32>(X, 0.0, C); }
     else { rgb_prime = vec3<f32>(C, 0.0, X); }
     return rgb_prime + vec3<f32>(m, m, m);
-}
-
-fn apply_hue_shift(color: vec3<f32>, shift_degrees: f32) -> vec3<f32> {
-    if (abs(shift_degrees) < 0.01) {
-        return color;
-    }
-    let srgb_color = linear_to_srgb_extended(color);
-    let hsv = rgb_to_hsv(srgb_color);
-    var shifted_h = hsv.x + shift_degrees;
-    shifted_h = (shifted_h + 360.0) % 360.0;
-    let shifted_srgb = hsv_to_rgb(vec3<f32>(shifted_h, hsv.y, hsv.z));
-    return srgb_to_linear(shifted_srgb);
-}
-
-fn get_raw_hsl_influence(hue: f32, center: f32, width: f32) -> f32 {
-    let dist = min(abs(hue - center), 360.0 - abs(hue - center));
-    const sharpness = 1.5;
-    let falloff = dist / (width * 0.5);
-    return exp(-sharpness * falloff * falloff);
 }
 
 fn hash(p: vec2<f32>) -> f32 {
@@ -762,95 +732,145 @@ fn apply_white_balance(color: vec3<f32>, temp: f32, tnt: f32) -> vec3<f32> {
     return CONE_TO_PP * ((PP_TO_CONE * color) * (origin_cone / target_cone));
 }
 
-fn apply_creative_color(color: vec3<f32>, sat: f32, vib: f32) -> vec3<f32> {
-    var processed = color;
-    let luma = get_luma(processed);
 
-    if (sat != 0.0) {
-        processed = mix(vec3<f32>(luma), processed, 1.0 + sat);
-    }
-    if (vib == 0.0) { return processed; }
-    let c_max = max(processed.r, max(processed.g, processed.b));
-    let c_min = min(processed.r, min(processed.g, processed.b));
-    let delta = c_max - c_min;
-    if (delta < 0.02) {
-        return processed;
-    }
-    let current_sat = delta / max(c_max, 0.001);
-    if (vib > 0.0) {
-        let sat_mask = 1.0 - smoothstep(0.4, 0.9, current_sat);
-        let hsv = rgb_to_hsv(processed);
-        let hue = hsv.x;
-        let skin_center = 25.0;
-        let hue_dist = min(abs(hue - skin_center), 360.0 - abs(hue - skin_center));
-        let is_skin = smoothstep(35.0, 10.0, hue_dist);
-        let skin_dampener = mix(1.0, 0.6, is_skin);
-        let amount = vib * sat_mask * skin_dampener * 3.0;
-        processed = mix(vec3<f32>(luma), processed, 1.0 + amount);
-    } else {
-        let desat_mask = 1.0 - smoothstep(0.2, 0.8, current_sat);
-        let amount = vib * desat_mask;
-        processed = mix(vec3<f32>(luma), processed, 1.0 + amount);
-    }
-    return processed;
+// Oklab, generated from oklab.rs which asserts these against this file.
+const PP_TO_LMS = mat3x3<f32>(
+    vec3<f32>(0.71538717, 0.27443418, 0.10983816),
+    vec3<f32>(0.35280859, 0.66782898, 0.18630311),
+    vec3<f32>(-0.06826405, 0.05775598, 0.70419478),
+);
+const LMS_TO_PP = mat3x3<f32>(
+    vec3<f32>(1.73857641, -0.70716941, -0.08408777),
+    vec3<f32>(-0.98809987, 1.93436372, -0.35763812),
+    vec3<f32>(0.24957718, -0.22720321, 1.44124269),
+);
+const LMS_TO_OKLAB = mat3x3<f32>(
+    vec3<f32>(0.21045426, 1.97799850, 0.02590404),
+    vec3<f32>(0.79361778, -2.42859221, 0.78277177),
+    vec3<f32>(-0.00407205, 0.45059371, -0.80867577),
+);
+const OKLAB_TO_LMS = mat3x3<f32>(
+    vec3<f32>(1.00000000, 1.00000000, 1.00000000),
+    vec3<f32>(0.39633778, -0.10556135, -0.08948418),
+    vec3<f32>(0.21580376, -0.06385417, -1.29148555),
+);
+
+// Oklch hue of each band's canonical colour, so a band selects the colours a
+// photographer means by its name rather than the ones an RGB hexcone happens to
+// place there. Blue sits at 264 here against 225 in the old HSV geometry.
+const OK_BAND_CENTERS = array<f32, 8>(29.23, 67.93, 109.78, 142.51, 194.80, 264.06, 311.99, 328.36);
+const OK_BAND_FALLOFF_DEG: f32 = 75.0;
+
+// Skin holds an Oklch hue within a couple of degrees of this across light and
+// deep tones alike, which is what makes guarding it there meaningful.
+const OK_SKIN_HUE_DEG: f32 = 55.0;
+const OK_SKIN_WIDTH_DEG: f32 = 26.0;
+const OK_SKIN_GUARD: f32 = 0.45;
+
+const OK_VIBRANCE_STRENGTH: f32 = 2.0;
+const OK_CHROMA_REFERENCE: f32 = 0.16;
+
+/// Cube root that keeps its argument's sign. A wide working space carries
+/// channels below zero, and a plain power of a negative base is not a number.
+fn ok_signed_cbrt(v: vec3<f32>) -> vec3<f32> {
+    return sign(v) * pow(abs(v), vec3<f32>(1.0 / 3.0));
 }
 
-fn apply_hsl_panel(color: vec3<f32>, hsl_adjustments: array<HslColor, 8>, coords_i: vec2<i32>) -> vec3<f32> {
-    let safe_color = max(color, vec3<f32>(0.0));
-    if (distance(safe_color.r, safe_color.g) < 0.001 && distance(safe_color.g, safe_color.b) < 0.001) {
-        return safe_color;
-    }
-    let original_hsv = rgb_to_hsv(safe_color);
-    let original_luma = get_luma(safe_color);
+fn oklab_from_working(c: vec3<f32>) -> vec3<f32> {
+    return LMS_TO_OKLAB * ok_signed_cbrt(PP_TO_LMS * c);
+}
 
-    let saturation_mask = smoothstep(0.05, 0.20, original_hsv.y);
-    let luminance_weight = smoothstep(0.0, 1.0, original_hsv.y);
+fn working_from_oklab(lab: vec3<f32>) -> vec3<f32> {
+    let lms = OKLAB_TO_LMS * lab;
+    return LMS_TO_PP * (lms * lms * lms);
+}
 
-    if (saturation_mask < 0.001 && luminance_weight < 0.001) {
-        return safe_color;
-    }
+fn ok_hue_distance(a: f32, b: f32) -> f32 {
+    let d = abs(a - b) % 360.0;
+    return min(d, 360.0 - d);
+}
 
-    let original_hue = original_hsv.x;
-
-    var raw_influences: array<f32, 8>;
-    var total_raw_influence: f32 = 0.0;
-    for (var i = 0u; i < 8u; i = i + 1u) {
-        let range = HSL_RANGES[i];
-        let influence = get_raw_hsl_influence(original_hue, range.center, range.width);
-        raw_influences[i] = influence;
-        total_raw_influence += influence;
-    }
-
-    var total_hue_shift: f32 = 0.0;
-    var total_sat_multiplier: f32 = 0.0;
-    var total_lum_adjust: f32 = 0.0;
-
-    for (var i = 0u; i < 8u; i = i + 1u) {
-        let normalized_influence = raw_influences[i] / total_raw_influence;
-
-        let hue_sat_influence = normalized_influence * saturation_mask;
-        let luma_influence = normalized_influence * luminance_weight;
-
-        total_hue_shift += hsl_adjustments[i].hue * 2.0 * hue_sat_influence;
-        total_sat_multiplier += hsl_adjustments[i].saturation * hue_sat_influence;
-        total_lum_adjust += hsl_adjustments[i].luminance * luma_influence;
+/// Hue, saturation, vibrance and the eight-way colour panel, in one pass
+/// through Oklch.
+///
+/// Scaling toward luminance in linear RGB, which these controls did before,
+/// moves along a line in a space where hue is not preserved: raising chroma by
+/// half drifts an orange about thirteen degrees and a deep blue about ten. The
+/// same change in Oklch holds hue to within measurement noise, which is the
+/// whole reason the conversion is worth its cost. Doing all four here also
+/// spends two conversions rather than the six the separate controls cost.
+fn apply_oklch_color(
+    color: vec3<f32>,
+    hue_shift_degrees: f32,
+    sat: f32,
+    vib: f32,
+    hsl: array<HslColor, 8>
+) -> vec3<f32> {
+    let lab = oklab_from_working(color);
+    var l = lab.x;
+    var chroma = length(lab.yz);
+    var hue = degrees(atan2(lab.z, lab.y));
+    if (hue < 0.0) {
+        hue = hue + 360.0;
     }
 
-    if (original_hsv.y * (1.0 + total_sat_multiplier) < 0.0001) {
-        let final_luma = original_luma * (1.0 + total_lum_adjust);
-        return vec3<f32>(final_luma);
+    // Hue is meaningless as a colour approaches neutral, so anything that
+    // selects on it fades out rather than acting on noise.
+    let chromatic = smoothstep(0.0, 0.02, chroma);
+
+    var band_hue: f32 = 0.0;
+    var band_sat: f32 = 0.0;
+    var band_lum: f32 = 0.0;
+
+    if (chromatic > 0.0) {
+        var weights: array<f32, 8>;
+        var total: f32 = 0.0;
+        for (var i = 0u; i < 8u; i = i + 1u) {
+            let reach = max(0.0, 1.0 - ok_hue_distance(hue, OK_BAND_CENTERS[i]) / OK_BAND_FALLOFF_DEG);
+            let smoothed = reach * reach * (3.0 - 2.0 * reach);
+            weights[i] = smoothed;
+            total = total + smoothed;
+        }
+        if (total > 1e-6) {
+            for (var i = 0u; i < 8u; i = i + 1u) {
+                let share = weights[i] / total;
+                band_hue = band_hue + hsl[i].hue * 2.0 * share;
+                band_sat = band_sat + hsl[i].saturation * share;
+                band_lum = band_lum + hsl[i].luminance * share;
+            }
+        }
     }
-    var hsv = original_hsv;
-    hsv.x = (hsv.x + total_hue_shift + 360.0) % 360.0;
-    hsv.y = clamp(hsv.y * (1.0 + total_sat_multiplier), 0.0, 1.0);
-    let hs_shifted_rgb = hsv_to_rgb(vec3<f32>(hsv.x, hsv.y, original_hsv.z));
-    let new_luma = get_luma(hs_shifted_rgb);
-    let target_luma = original_luma * (1.0 + total_lum_adjust);
-    if (new_luma < 0.0001) {
-        return vec3<f32>(max(0.0, target_luma));
+
+    hue = hue + (band_hue + hue_shift_degrees) * chromatic;
+    l = l * (1.0 + band_lum * chromatic);
+    chroma = max(chroma * (1.0 + band_sat * chromatic), 0.0);
+
+    chroma = max(chroma * (1.0 + sat), 0.0);
+
+    // Vibrance lifts what is not already saturated, and holds back around the
+    // hue skin occupies. That restraint is a deliberate aesthetic choice, not a
+    // correction for a colour space that misbehaves.
+    if (vib != 0.0) {
+        let headroom = 1.0 - smoothstep(0.2, 1.6, chroma / OK_CHROMA_REFERENCE);
+        let from_skin = ok_hue_distance(hue, OK_SKIN_HUE_DEG) / OK_SKIN_WIDTH_DEG;
+        let guard = 1.0 - OK_SKIN_GUARD * exp(-from_skin * from_skin);
+        chroma = max(chroma * (1.0 + vib * OK_VIBRANCE_STRENGTH * headroom * guard * chromatic), 0.0);
     }
-    let final_color = hs_shifted_rgb * (target_luma / new_luma);
-    return final_color;
+
+    let radians_hue = radians(hue);
+    return working_from_oklab(vec3<f32>(l, chroma * cos(radians_hue), chroma * sin(radians_hue)));
+}
+
+/// Saturation and vibrance alone, for the callers that carry no hue or band
+/// adjustments of their own.
+fn apply_oklch_saturation(color: vec3<f32>, sat: f32, vib: f32) -> vec3<f32> {
+    let none = array<HslColor, 8>(
+        HslColor(0.0, 0.0, 0.0, 0.0), HslColor(0.0, 0.0, 0.0, 0.0),
+        HslColor(0.0, 0.0, 0.0, 0.0), HslColor(0.0, 0.0, 0.0, 0.0),
+        HslColor(0.0, 0.0, 0.0, 0.0), HslColor(0.0, 0.0, 0.0, 0.0),
+        HslColor(0.0, 0.0, 0.0, 0.0), HslColor(0.0, 0.0, 0.0, 0.0)
+    );
+    return apply_oklch_color(color, 0.0, sat, vib, none);
 }
 
 fn apply_color_grading(color: vec3<f32>, shadows: ColorGradeSettings, midtones: ColorGradeSettings, highlights: ColorGradeSettings, global: ColorGradeSettings, blending: f32, balance: f32) -> vec3<f32> {
@@ -1159,7 +1179,7 @@ fn apply_centre_tonal_and_color(
     let saturation_center_boost = centre_mask * centre_amount * SATURATION_CENTER_SCALE;
     let saturation_edge_effect = -(1.0 - centre_mask) * centre_amount * SATURATION_EDGE_SCALE;
     let total_saturation_effect = saturation_center_boost + saturation_edge_effect;
-    processed_color = apply_creative_color(processed_color, total_saturation_effect, vibrance_center_boost);
+    processed_color = apply_oklch_saturation(processed_color, total_saturation_effect, vibrance_center_boost);
 
     return processed_color;
 }
@@ -1936,9 +1956,13 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     composite_rgb_linear = apply_tonal_adjustments(composite_rgb_linear, tonal_blurred, is_raw, t_contrast, t_shadows, t_whites, t_blacks);
     composite_rgb_linear = apply_highlights_adjustment(composite_rgb_linear, tonal_blurred, is_raw, t_highlights);
     composite_rgb_linear = apply_color_calibration(composite_rgb_linear, adjustments.global.color_calibration);
-    composite_rgb_linear = apply_hsl_panel(composite_rgb_linear, final_hsl, absolute_coord_i);
-    composite_rgb_linear = apply_hue_shift(composite_rgb_linear, t_hue);
-    composite_rgb_linear = apply_creative_color(composite_rgb_linear, t_saturation, t_vibrance);
+    composite_rgb_linear = apply_oklch_color(
+        composite_rgb_linear,
+        t_hue,
+        t_saturation,
+        t_vibrance,
+        final_hsl
+    );
 
     composite_rgb_linear = apply_color_grading(
         composite_rgb_linear,
