@@ -770,6 +770,16 @@ const OK_SKIN_GUARD: f32 = 0.45;
 const OK_VIBRANCE_STRENGTH: f32 = 2.0;
 const OK_CHROMA_REFERENCE: f32 = 0.16;
 
+// How far a colour has to be from neutral before a band claims it. Hue is the
+// arctangent of two small differences, so at low chroma it is largely sensor
+// noise, and anything selecting on it has to fade out or that noise reaches the
+// image. Luminance ramps across the whole chroma range rather than reaching
+// full strength early, because a luminance wobble is what shows in the smooth
+// gradient of a sky.
+const OK_BAND_AUTHORITY_LOW: f32 = 0.01;
+const OK_BAND_AUTHORITY_HIGH: f32 = 0.06;
+const OK_LUMA_AUTHORITY_HIGH: f32 = 0.30;
+
 /// Cube root that keeps its argument's sign. A wide working space carries
 /// channels below zero, and a plain power of a negative base is not a number.
 fn ok_signed_cbrt(v: vec3<f32>) -> vec3<f32> {
@@ -814,9 +824,8 @@ fn apply_oklch_color(
         hue = hue + 360.0;
     }
 
-    // Hue is meaningless as a colour approaches neutral, so anything that
-    // selects on it fades out rather than acting on noise.
-    let chromatic = smoothstep(0.0, 0.02, chroma);
+    let chromatic = smoothstep(OK_BAND_AUTHORITY_LOW, OK_BAND_AUTHORITY_HIGH, chroma);
+    let luma_authority = smoothstep(0.0, OK_LUMA_AUTHORITY_HIGH, chroma);
 
     var band_hue: f32 = 0.0;
     var band_sat: f32 = 0.0;
@@ -842,7 +851,7 @@ fn apply_oklch_color(
     }
 
     hue = hue + (band_hue + hue_shift_degrees) * chromatic;
-    l = l * (1.0 + band_lum * chromatic);
+    l = max(l * (1.0 + band_lum * luma_authority), 0.0);
     chroma = max(chroma * (1.0 + band_sat * chromatic), 0.0);
 
     chroma = max(chroma * (1.0 + sat), 0.0);

@@ -204,6 +204,98 @@ mod tests {
         }
     }
 
+    const BAND_CENTERS: [f32; 8] = [29.23, 67.93, 109.78, 142.51, 194.80, 264.06, 311.99, 328.36];
+    const BAND_FALLOFF_DEG: f32 = 75.0;
+    /// Mirrors the authority constants in shader.wgsl.
+    const SHADER_BAND_AUTHORITY: (f32, f32) = (0.01, 0.06);
+    const SHADER_LUMA_AUTHORITY: (f32, f32) = (0.0, 0.30);
+
+    fn hue_distance(a: f32, b: f32) -> f32 {
+        let d = (a - b).abs() % 360.0;
+        d.min(360.0 - d)
+    }
+
+    fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+        let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+        t * t * (3.0 - 2.0 * t)
+    }
+
+    /// Reproduces the shader's band luminance path, so the noise behaviour can
+    /// be measured here rather than only seen in a sky.
+    fn band_luminance(rgb: [f32; 3], band: usize, amount: f32, luma_authority: (f32, f32)) -> f32 {
+        let lch = oklch_from_oklab(oklab_from_prophoto(rgb));
+        let (l, chroma) = (lch[0], lch[1]);
+        let hue = lch[2].to_degrees().rem_euclid(360.0);
+
+        let mut weights = [0.0f32; 8];
+        let mut total = 0.0;
+        for i in 0..8 {
+            let reach = (1.0 - hue_distance(hue, BAND_CENTERS[i]) / BAND_FALLOFF_DEG).max(0.0);
+            weights[i] = reach * reach * (3.0 - 2.0 * reach);
+            total += weights[i];
+        }
+        let share = if total > 1e-6 {
+            weights[band] / total
+        } else {
+            0.0
+        };
+        let authority = smoothstep(luma_authority.0, luma_authority.1, chroma);
+        l * (1.0 + amount * share * authority)
+    }
+
+    /// A sky is smooth to the eye but noisy per pixel, and its hue is the
+    /// arctangent of two small noisy numbers. Band influence has to fade with
+    /// chroma or that noise is amplified straight into luminance.
+    #[test]
+    fn band_luminance_does_not_amplify_noise_in_low_chroma() {
+        // A desaturated sky blue, and the same pixel a plausible noise step away.
+        let sky = [0.32, 0.44, 0.62];
+        let noisy = [0.325, 0.437, 0.628];
+
+        let narrow_gate = (0.0, 0.02);
+        let spread = (band_luminance(sky, 5, -0.24, narrow_gate)
+            - band_luminance(noisy, 5, -0.24, narrow_gate))
+        .abs();
+
+        let ramped = SHADER_LUMA_AUTHORITY;
+        let ramped_spread =
+            (band_luminance(sky, 5, -0.24, ramped) - band_luminance(noisy, 5, -0.24, ramped)).abs();
+
+        assert!(
+            ramped_spread < spread * 0.35,
+            "ramping authority across chroma should suppress the noise it lets through: \
+             narrow gate spread {spread:.6}, ramped {ramped_spread:.6}"
+        );
+    }
+
+    /// Hue and saturation reach full authority sooner than luminance does,
+    /// which is the balance the previous HSV implementation also struck.
+    #[test]
+    fn hue_authority_arrives_before_luminance_authority() {
+        let sky_chroma = 0.05;
+        let hue_share = smoothstep(SHADER_BAND_AUTHORITY.0, SHADER_BAND_AUTHORITY.1, sky_chroma);
+        let luma_share = smoothstep(SHADER_LUMA_AUTHORITY.0, SHADER_LUMA_AUTHORITY.1, sky_chroma);
+        assert!(
+            hue_share > luma_share * 3.0,
+            "hue {hue_share:.3} should outpace luminance {luma_share:.3} at sky chroma"
+        );
+        assert!(
+            luma_share < 0.15,
+            "luminance authority in a sky was {luma_share:.3}"
+        );
+    }
+
+    #[test]
+    fn band_luminance_still_reaches_saturated_colour() {
+        let vivid = [0.05, 0.12, 0.72];
+        let plain = band_luminance(vivid, 5, 0.0, SHADER_LUMA_AUTHORITY);
+        let lifted = band_luminance(vivid, 5, -0.24, SHADER_LUMA_AUTHORITY);
+        assert!(
+            lifted < plain * 0.93,
+            "a saturated blue should still respond: {plain} to {lifted}"
+        );
+    }
+
     #[test]
     fn working_space_white_is_oklab_white() {
         let lab = oklab_from_prophoto([1.0, 1.0, 1.0]);
