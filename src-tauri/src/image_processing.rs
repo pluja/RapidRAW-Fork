@@ -3511,3 +3511,37 @@ pub fn calculate_auto_adjustments(
 
     Ok(auto_results_to_json(&results))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The colour band whose selection is being shown is a view mode, so it is
+    /// read straight from the payload rather than through the gate that section
+    /// visibility applies to real adjustments. It also has to survive a payload
+    /// that never mentions it, which is what a stored image looks like.
+    #[test]
+    fn the_selection_view_reaches_the_uniform() {
+        let shown = serde_json::json!({ "colorMixerPreview": 5.0 });
+        assert_eq!(
+            get_global_adjustments_from_json(&shown, true, None).color_mixer_preview,
+            5.0
+        );
+
+        let hidden_section = serde_json::json!({
+            "colorMixerPreview": 5.0,
+            "sectionVisibility": { "color": false },
+        });
+        assert_eq!(
+            get_global_adjustments_from_json(&hidden_section, true, None).color_mixer_preview,
+            5.0,
+            "a way of looking should not be gated by what is switched off"
+        );
+
+        let absent = serde_json::json!({});
+        assert!(
+            get_global_adjustments_from_json(&absent, true, None).color_mixer_preview < 0.0,
+            "a payload without the field should leave the view off"
+        );
+    }
+}

@@ -717,6 +717,9 @@ export const normalizeLoadedAdjustments = (loadedAdjustments: Adjustments): any 
     transformXOffset: loadedAdjustments.transformXOffset ?? INITIAL_ADJUSTMENTS.transformXOffset,
     transformYOffset: loadedAdjustments.transformYOffset ?? INITIAL_ADJUSTMENTS.transformYOffset,
     colorCalibration: { ...INITIAL_ADJUSTMENTS.colorCalibration, ...(loadedAdjustments.colorCalibration || {}) },
+    // Normalising rebuilds this object field by field, so anything absent here
+    // is dropped. A stored image never carries a selection view, so it starts off.
+    colorMixerPreview: loadedAdjustments.colorMixerPreview ?? INITIAL_ADJUSTMENTS.colorMixerPreview,
     colorGrading: { ...INITIAL_ADJUSTMENTS.colorGrading, ...(loadedAdjustments.colorGrading || {}) },
     hsl: { ...INITIAL_ADJUSTMENTS.hsl, ...(loadedAdjustments.hsl || {}) },
     curves: loadedAdjustments.curves ? deepCloneCurves(loadedAdjustments.curves) : getDefaultCurves(),

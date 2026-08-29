@@ -443,12 +443,17 @@ export default function ColorPanel({
   // pipeline stores them in.
   const activeColorIndex = HSL_COLORS.findIndex(({ name }) => name === activeColor);
 
+  // Depends on the live value, not only on the toggle, because loading an image
+  // rebuilds the adjustments from a whitelist and saving one strips this out.
+  // Without that the view could be switched on and then silently lose its
+  // setting, leaving a button that looks engaged and does nothing.
+  const previewBand = adjustments?.colorMixerPreview;
   useEffect(() => {
-    setAdjustments((prev: Adjustments) => {
-      const next = isShowingSelection ? activeColorIndex : -1;
-      return prev.colorMixerPreview === next ? prev : { ...prev, colorMixerPreview: next };
-    });
-  }, [isShowingSelection, activeColorIndex, setAdjustments]);
+    const next = isShowingSelection ? activeColorIndex : -1;
+    if (previewBand !== next) {
+      setAdjustments((prev: Adjustments) => ({ ...prev, colorMixerPreview: next }));
+    }
+  }, [isShowingSelection, activeColorIndex, previewBand, setAdjustments]);
 
   // Showing a selection is a way of looking, not an edit, so it must not
   // outlive the panel and reach a saved adjustment.
