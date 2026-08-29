@@ -910,19 +910,6 @@ fn apply_oklch_color(
         band_lum = band_lum + hsl[i].luminance * share;
     }
 
-    // Showing which pixels a band has claimed, the way Capture One does: what
-    // the band owns keeps its colour, everything else drains and dims, and a
-    // partial claim reads as partial on both counts. Selection is otherwise
-    // only visible through the artefacts it causes.
-    let previewed = adjustments.global.color_mixer_preview;
-    if (previewed >= 0.0) {
-        let claimed = shares[u32(round(clamp(previewed, 0.0, 7.0)))];
-        return working_from_oklab(vec3<f32>(
-            l * mix(OK_PREVIEW_DIM, 1.0, claimed),
-            lab.y * claimed,
-            lab.z * claimed
-        ));
-    }
 
     hue = hue + band_hue + hue_shift_degrees;
     // Oklab lightness is perceptual, roughly the cube root of luminance, so
@@ -943,8 +930,27 @@ fn apply_oklch_color(
         chroma = max(chroma * (1.0 + vib * OK_VIBRANCE_STRENGTH * headroom * guard), 0.0);
     }
 
+    // Showing which pixels a band has claimed, the way Capture One does: what
+    // the band owns keeps its colour, everything else drains and dims, and a
+    // partial claim reads as partial on both counts. This runs after the
+    // adjustments rather than instead of them, so the range being refined and
+    // the correction being made to it are visible at the same time. Selection
+    // is otherwise only visible through the artefacts it causes.
+    var shown_l = l;
+    var shown_chroma = chroma;
+    let previewed = adjustments.global.color_mixer_preview;
+    if (previewed >= 0.0) {
+        let claimed = shares[u32(round(clamp(previewed, 0.0, 7.0)))];
+        shown_l = l * mix(OK_PREVIEW_DIM, 1.0, claimed);
+        shown_chroma = chroma * claimed;
+    }
+
     let radians_hue = radians(hue);
-    return working_from_oklab(vec3<f32>(l, chroma * cos(radians_hue), chroma * sin(radians_hue)));
+    return working_from_oklab(vec3<f32>(
+        shown_l,
+        shown_chroma * cos(radians_hue),
+        shown_chroma * sin(radians_hue)
+    ));
 }
 
 /// Saturation and vibrance alone, for the callers that carry no hue or band

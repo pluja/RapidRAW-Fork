@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Eye, Pipette, Sliders } from 'lucide-react';
+import { Pipette, Sliders, SquareDashedMousePointer } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import Slider from '../ui/Slider';
@@ -594,7 +594,7 @@ export default function ColorPanel({
               isShowingSelection ? 'bg-accent/25 text-text-primary' : 'text-text-secondary hover:text-text-primary'
             }`}
           >
-            <Eye size={16} />
+            <SquareDashedMousePointer size={16} />
           </button>
         </div>
         <div className="flex justify-between mb-4 px-1">
