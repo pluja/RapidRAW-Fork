@@ -167,6 +167,9 @@ export interface Adjustments {
   chromaticAberrationBlueYellow: number;
   chromaticAberrationRedCyan: number;
   colorCalibration: ColorCalibration;
+  /// Index of the colour band whose selection is being shown, or -1 for none.
+  /// A view mode rather than an edit, cleared when the panel closes.
+  colorMixerPreview: number;
   colorGrading: ColorGradingProps;
   colorNoiseReduction: number;
   contrast: number;
@@ -505,6 +508,7 @@ export const INITIAL_ADJUSTMENTS: Adjustments = {
   chromaticAberrationBlueYellow: 0,
   chromaticAberrationRedCyan: 0,
   colorCalibration: { ...INITIAL_COLOR_CALIBRATION },
+  colorMixerPreview: -1,
   colorGrading: { ...INITIAL_COLOR_GRADING },
   colorNoiseReduction: 0,
   contrast: 0,

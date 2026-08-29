@@ -43,7 +43,7 @@ struct GlobalAdjustments {
     tint: f32,
     vibrance: f32,
     hue: f32,
-    _pad_color1: f32,
+    color_mixer_preview: f32,
     _pad_color2: f32,
     _pad_color3: f32,
 
@@ -804,6 +804,9 @@ const OK_BAND_TRUST_HIGH: f32 = 0.70;
 // drew a hard edge across the smooth part of a sky passing from blue to warm.
 // Kept apart, the fade through neutral has the shape of a smoothstep, easing
 // out at both ends instead of falling off a cliff.
+/// How far what a band has not claimed is dimmed when showing its selection.
+const OK_PREVIEW_DIM: f32 = 0.30;
+
 const OK_BAND_CONFIDENCE_LOW: f32 = 0.002;
 const OK_BAND_CONFIDENCE_HIGH: f32 = 0.06;
 
@@ -884,14 +887,30 @@ fn apply_oklch_color(
     var band_hue: f32 = 0.0;
     var band_sat: f32 = 0.0;
     var band_lum: f32 = 0.0;
+    var shares: array<f32, 8>;
     for (var i = 0u; i < 8u; i = i + 1u) {
         // A colour no band owns divides evenly between all eight, so measuring
         // each band's share against an even one leaves neutrals untouched with
         // no threshold to cross.
         let share = max((weights[i] / total - 0.125) / 0.875, 0.0) * confidence;
+        shares[i] = share;
         band_hue = band_hue + hsl[i].hue * 2.0 * share;
         band_sat = band_sat + hsl[i].saturation * share;
         band_lum = band_lum + hsl[i].luminance * share;
+    }
+
+    // Showing which pixels a band has claimed, the way Capture One does: what
+    // the band owns keeps its colour, everything else drains and dims, and a
+    // partial claim reads as partial on both counts. Selection is otherwise
+    // only visible through the artefacts it causes.
+    let previewed = adjustments.global.color_mixer_preview;
+    if (previewed >= 0.0) {
+        let claimed = shares[u32(round(clamp(previewed, 0.0, 7.0)))];
+        return working_from_oklab(vec3<f32>(
+            l * mix(OK_PREVIEW_DIM, 1.0, claimed),
+            lab.y * claimed,
+            lab.z * claimed
+        ));
     }
 
     hue = hue + band_hue + hue_shift_degrees;

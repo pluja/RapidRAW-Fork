@@ -63,7 +63,8 @@
       "vibrance": "Vibração",
       "wbPickerTooltip": "Seletor de Balanço de Branco",
       "wbPickerWgpuDisabled": "Seletor de BB: Desative o WGPU nas Configurações.",
-      "whiteBalance": "Balanço de Branco"
+      "whiteBalance": "Balanço de Branco",
+      "showSelectionTooltip": "Mostrar quais pixels esta faixa de cor afeta"
     },
     "curves": {
       "channelTitle": "Canal {{channel}}",

@@ -63,7 +63,8 @@
       "vibrance": "Dynamik",
       "wbPickerTooltip": "Weißabgleich-Pipette",
       "wbPickerWgpuDisabled": "WA-Pipette: WGPU in den Einstellungen deaktivieren.",
-      "whiteBalance": "Weißabgleich"
+      "whiteBalance": "Weißabgleich",
+      "showSelectionTooltip": "Zeigen, welche Pixel dieses Farbband betrifft"
     },
     "curves": {
       "channelTitle": "{{channel}}-Kanal",

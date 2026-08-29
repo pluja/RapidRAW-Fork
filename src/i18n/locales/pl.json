@@ -63,7 +63,8 @@
       "vibrance": "Jaskrawość",
       "wbPickerTooltip": "Próbnik balansu bieli",
       "wbPickerWgpuDisabled": "Próbnik BB: Wyłącz WGPU w Ustawieniach.",
-      "whiteBalance": "Balans bieli"
+      "whiteBalance": "Balans bieli",
+      "showSelectionTooltip": "Pokaż, na które piksele wpływa to pasmo kolorów"
     },
     "curves": {
       "channelTitle": "Kanał {{channel}}",

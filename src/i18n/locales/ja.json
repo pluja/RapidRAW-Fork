@@ -63,7 +63,8 @@
       "vibrance": "自然な彩度",
       "wbPickerTooltip": "ホワイトバランススポイト",
       "wbPickerWgpuDisabled": "WBスポイト: 設定でWGPUを無効にしてください。",
-      "whiteBalance": "ホワイトバランス"
+      "whiteBalance": "ホワイトバランス",
+      "showSelectionTooltip": "このカラーバンドが影響するピクセルを表示"
     },
     "curves": {
       "channelTitle": "{{channel}} チャンネル",

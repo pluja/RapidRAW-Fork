@@ -63,7 +63,8 @@
       "vibrance": "鲜艳度",
       "wbPickerTooltip": "白平衡选取器",
       "wbPickerWgpuDisabled": "白平衡选取器：请在设置中禁用 WGPU。",
-      "whiteBalance": "白平衡"
+      "whiteBalance": "白平衡",
+      "showSelectionTooltip": "显示此色彩范围影响的像素"
     },
     "curves": {
       "channelTitle": "{{channel}} 通道",

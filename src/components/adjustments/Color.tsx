@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Pipette, Sliders } from 'lucide-react';
+import { Eye, Pipette, Sliders } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import Slider from '../ui/Slider';
@@ -404,6 +404,7 @@ export default function ColorPanel({
 }: ColorPanelProps) {
   const { t } = useTranslation();
   const [activeColor, setActiveColor] = useState('reds');
+  const [isShowingSelection, setIsShowingSelection] = useState(false);
   const adjustmentVisibility = appSettings?.adjustmentVisibility || {};
   const isWgpuEnabled = appSettings?.useWgpuRenderer !== false;
 
@@ -437,6 +438,28 @@ export default function ColorPanel({
 
   const currentHsl = adjustments?.hsl?.[activeColor] || { hue: 0, saturation: 0, luminance: 0 };
   const baseHue = colorHueMap[activeColor] || 0;
+
+  // The band's index is its position in the swatch row, which is the order the
+  // pipeline stores them in.
+  const activeColorIndex = HSL_COLORS.findIndex(({ name }) => name === activeColor);
+
+  useEffect(() => {
+    setAdjustments((prev: Adjustments) => {
+      const next = isShowingSelection ? activeColorIndex : -1;
+      return prev.colorMixerPreview === next ? prev : { ...prev, colorMixerPreview: next };
+    });
+  }, [isShowingSelection, activeColorIndex, setAdjustments]);
+
+  // Showing a selection is a way of looking, not an edit, so it must not
+  // outlive the panel and reach a saved adjustment.
+  useEffect(
+    () => () => {
+      setAdjustments((prev: Adjustments) =>
+        prev.colorMixerPreview === -1 ? prev : { ...prev, colorMixerPreview: -1 },
+      );
+    },
+    [setAdjustments],
+  );
   const effectiveHue = baseHue + (currentHsl.hue || 0);
 
   useEffect(() => {
@@ -477,9 +500,7 @@ export default function ColorPanel({
             <button
               onClick={toggleWbPicker}
               className={`p-1.5 rounded-md transition-colors ${
-                isWbPickerActive
-                  ? 'bg-accent text-button-text'
-                  : 'hover:bg-bg-secondary text-text-secondary'
+                isWbPickerActive ? 'bg-accent text-button-text' : 'hover:bg-bg-secondary text-text-secondary'
               }`}
               data-tooltip={t('adjustments.color.wbPickerTooltip')}
             >
@@ -562,9 +583,20 @@ export default function ColorPanel({
       </div>
 
       <div className="p-2 bg-bg-tertiary rounded-md">
-        <Text variant={TextVariants.heading} className="mb-2">
-          {t('adjustments.color.colorMixer')}
-        </Text>
+        <div className="flex items-center justify-between mb-2">
+          <Text variant={TextVariants.heading}>{t('adjustments.color.colorMixer')}</Text>
+          <button
+            type="button"
+            aria-pressed={isShowingSelection}
+            onClick={() => setIsShowingSelection((shown: boolean) => !shown)}
+            data-tooltip={t('adjustments.color.showSelectionTooltip')}
+            className={`p-1 rounded-md transition-colors ${
+              isShowingSelection ? 'bg-accent/25 text-text-primary' : 'text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            <Eye size={16} />
+          </button>
+        </div>
         <div className="flex justify-between mb-4 px-1">
           {HSL_COLORS.map(({ name, color, label }) => (
             <ColorSwatch

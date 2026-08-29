@@ -1502,7 +1502,8 @@ pub struct GlobalAdjustments {
     pub tint: f32,
     pub vibrance: f32,
     pub hue: f32,
-    _pad_color1: f32,
+    /// Which colour band to show the selection of, or negative for none.
+    pub color_mixer_preview: f32,
     _pad_color2: f32,
     _pad_color3: f32,
 
@@ -2245,7 +2246,12 @@ fn get_global_adjustments_from_json(
         tint: get_val("color", "tint", SCALES.tint, None),
         vibrance: get_val("color", "vibrance", SCALES.vibrance, None),
         hue: get_val("color", "hue", 1.0, None),
-        _pad_color1: 0.0,
+        // A view mode rather than an adjustment, so section visibility does
+        // not gate it.
+        color_mixer_preview: js_adjustments
+            .get("colorMixerPreview")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(-1.0) as f32,
         _pad_color2: 0.0,
         _pad_color3: 0.0,
 

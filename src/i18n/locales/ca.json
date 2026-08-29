@@ -63,7 +63,8 @@
       "vibrance": "Intensitat",
       "wbPickerTooltip": "Comptagotes de balanç de blancs",
       "wbPickerWgpuDisabled": "Comptagotes BB: Desactiva WGPU a Configuració.",
-      "whiteBalance": "Balanç de blancs"
+      "whiteBalance": "Balanç de blancs",
+      "showSelectionTooltip": "Mostra quins píxels afecta aquesta banda de color"
     },
     "curves": {
       "channelTitle": "Canal {{channel}}",

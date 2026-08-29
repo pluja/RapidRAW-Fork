@@ -63,7 +63,8 @@
       "vibrance": "Красочность",
       "wbPickerTooltip": "Пипетка баланса белого",
       "wbPickerWgpuDisabled": "Пипетка ББ: отключите WGPU в настройках.",
-      "whiteBalance": "Баланс белого"
+      "whiteBalance": "Баланс белого",
+      "showSelectionTooltip": "Показать, на какие пиксели влияет эта цветовая полоса"
     },
     "curves": {
       "channelTitle": "Канал {{channel}}",

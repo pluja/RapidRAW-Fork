@@ -63,7 +63,8 @@
       "vibrance": "Vibrance",
       "wbPickerTooltip": "White Balance Picker",
       "wbPickerWgpuDisabled": "WB Picker: Disable WGPU in Settings.",
-      "whiteBalance": "White Balance"
+      "whiteBalance": "White Balance",
+      "showSelectionTooltip": "Show which pixels this colour band affects"
     },
     "curves": {
       "channelTitle": "{{channel}} Channel",
