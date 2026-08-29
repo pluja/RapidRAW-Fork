@@ -181,6 +181,14 @@ export interface WorkspaceState {
   panelSwitcherPlacement: Record<PanelRegion, 'left' | 'right' | 'top' | 'bottom'>;
 }
 
+export type WorkspaceId = 'library' | 'develop' | 'export';
+
+export const WORKSPACE_IDS: WorkspaceId[] = ['library', 'develop', 'export'];
+
+export interface ViewWorkspace extends WorkspaceState {
+  uiVisibility: UiVisibility;
+}
+
 export type GroupPreference = 'jpeg' | 'raw';
 export type GroupingMode = 'off' | GroupPreference;
 
@@ -246,7 +254,8 @@ export interface AppSettings {
   groupEditedFiles?: boolean;
   groupPreferredType?: GroupPreference; // legacy
   alwaysDecodeRawThumbnails?: boolean;
-  workspace?: WorkspaceState;
+  workspace?: WorkspaceState; // legacy, superseded by workspaces
+  workspaces?: Record<WorkspaceId, ViewWorkspace>;
 }
 
 export interface BrushSettings {

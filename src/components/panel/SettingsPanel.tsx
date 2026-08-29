@@ -800,12 +800,12 @@ export default function SettingsPanel({
     setIsResettingLayout(true);
     setLayoutResetMessage(t('settings.data.statuses.resettingLayout'));
     try {
-      const resetWorkspaceLayout = useUIStore.getState().resetWorkspaceLayout;
-      const defaultWorkspace = resetWorkspaceLayout(false);
+      const { resetWorkspaceLayout, snapshotWorkspaces } = useUIStore.getState();
+      resetWorkspaceLayout(false);
 
       await onSettingsChange({
         ...appSettings,
-        workspace: defaultWorkspace,
+        workspaces: snapshotWorkspaces(),
       });
 
       setLayoutResetMessage(t('settings.data.statuses.layoutResetSuccess'));

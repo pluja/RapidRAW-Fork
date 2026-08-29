@@ -1590,6 +1590,9 @@
         "toggle_presets": "Vorgaben-Panel ein-/ausblenden",
         "toggle_right_panel": "Rechtes Panel ein-/ausblenden",
         "undo": "Bearbeitung rückgängig machen",
+        "workspace_develop": "Zum Arbeitsbereich Entwickeln",
+        "workspace_export": "Zum Arbeitsbereich Export",
+        "workspace_library": "Zum Arbeitsbereich Bibliothek",
         "zoom_100": "Auf 100% zoomen",
         "zoom_fit": "Auf Fenstergröße einpassen",
         "zoom_in": "Vergrößern",
@@ -1959,6 +1962,16 @@
         "rgb": "RGB-Überlagerung",
         "showClipping": "Clipping-Warnungen anzeigen",
         "vectorscope": "Vektorskop"
+      }
+    },
+    "workspaces": {
+      "develop": "Entwickeln",
+      "export": "Export",
+      "library": "Bibliothek",
+      "tooltips": {
+        "develop": "Ausgewähltes Foto bearbeiten",
+        "export": "Ausgewählte Fotos exportieren",
+        "library": "Fotos durchsehen und auswählen"
       }
     }
   }

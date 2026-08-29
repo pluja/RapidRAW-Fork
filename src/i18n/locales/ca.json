@@ -1590,6 +1590,9 @@
         "toggle_presets": "Alternar tauler d'Ajustos preestablerts",
         "toggle_right_panel": "Commutar el panell dret",
         "undo": "Desfer ajustament",
+        "workspace_develop": "Ves a l'espai Revelat",
+        "workspace_export": "Ves a l'espai Exporta",
+        "workspace_library": "Ves a l'espai Biblioteca",
         "zoom_100": "Apropar al 100%",
         "zoom_fit": "Apropar per ajustar",
         "zoom_in": "Apropar",
@@ -1959,6 +1962,16 @@
         "rgb": "Superposició RGB",
         "showClipping": "Mostrar advertiments de retall",
         "vectorscope": "Vectorscopi"
+      }
+    },
+    "workspaces": {
+      "develop": "Revelat",
+      "export": "Exporta",
+      "library": "Biblioteca",
+      "tooltips": {
+        "develop": "Edita la foto seleccionada",
+        "export": "Exporta les fotos seleccionades",
+        "library": "Explora i selecciona les teves fotos"
       }
     }
   }

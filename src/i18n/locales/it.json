@@ -1623,6 +1623,9 @@
         "toggle_presets": "Attiva/Disattiva pannello Predefiniti",
         "toggle_right_panel": "Mostra/Nascondi pannello destro",
         "undo": "Annulla modifica",
+        "workspace_develop": "Vai allo spazio Sviluppo",
+        "workspace_export": "Vai allo spazio Esporta",
+        "workspace_library": "Vai allo spazio Libreria",
         "zoom_100": "Zoom al 100%",
         "zoom_fit": "Zoom per adattare",
         "zoom_in": "Ingrandisci",
@@ -1993,6 +1996,16 @@
         "rgb": "Sovrapposizione RGB",
         "showClipping": "Mostra Avvisi di Ritaglio",
         "vectorscope": "Vettorscopio"
+      }
+    },
+    "workspaces": {
+      "develop": "Sviluppo",
+      "export": "Esporta",
+      "library": "Libreria",
+      "tooltips": {
+        "develop": "Modifica la foto selezionata",
+        "export": "Esporta le foto selezionate",
+        "library": "Sfoglia e seleziona le tue foto"
       }
     }
   }

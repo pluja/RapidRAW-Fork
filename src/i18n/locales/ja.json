@@ -1588,6 +1588,9 @@
         "toggle_presets": "プリセットパネルの表示/非表示",
         "toggle_right_panel": "右パネルの表示/非表示",
         "undo": "操作を元に戻す",
+        "workspace_develop": "現像に切り替え",
+        "workspace_export": "書き出しに切り替え",
+        "workspace_library": "ライブラリに切り替え",
         "zoom_100": "100%ズーム",
         "zoom_fit": "画面に合わせる",
         "zoom_in": "ズームイン",
@@ -1957,6 +1960,16 @@
         "rgb": "RGB重ね合わせ",
         "showClipping": "白とび・黒つぶれ警告を表示",
         "vectorscope": "ベクトルスコープ"
+      }
+    },
+    "workspaces": {
+      "develop": "現像",
+      "export": "書き出し",
+      "library": "ライブラリ",
+      "tooltips": {
+        "develop": "選択した写真を編集",
+        "export": "選択した写真を書き出し",
+        "library": "写真の閲覧と選別"
       }
     }
   }

@@ -17,6 +17,7 @@ import {
 import clsx from 'clsx';
 
 import TitleBar from './window/TitleBar';
+import WorkspaceTabs from './components/ui/WorkspaceTabs';
 import FolderTree from './components/panel/right/FolderTree';
 import SettingsPanel from './components/panel/SettingsPanel';
 import ExportPanel from './components/panel/right/ExportPanel';
@@ -827,6 +828,8 @@ function App() {
     }
   };
 
+  const workspaceTabs = hasMainContent ? <WorkspaceTabs onImageSelect={handleImageSelect} /> : null;
+
   const ActiveOverlayIcon = activeLayoutDragItem ? PANEL_ICONS[activeLayoutDragItem] : null;
   const effectiveLeftWidth = uiVisibility.leftPanel ? leftPanelWidth : 48;
   const effectiveRightWidth = uiVisibility.rightPanel ? rightPanelWidth : 48;
@@ -856,7 +859,17 @@ function App() {
               isFullScreen ? 'max-h-0 opacity-0 pointer-events-none' : 'max-h-15 opacity-100',
             )}
           >
-            {appSettings?.decorations || (!isWindowFullScreen && <TitleBar />)}
+            {appSettings?.decorations || isWindowFullScreen ? (
+              workspaceTabs && (
+                <div className="pt-2 px-2 w-full">
+                  <div className="h-10 bg-bg-secondary flex justify-center items-center select-none rounded-lg">
+                    {workspaceTabs}
+                  </div>
+                </div>
+              )
+            ) : (
+              <TitleBar center={workspaceTabs} />
+            )}
           </div>
         )}
         <div

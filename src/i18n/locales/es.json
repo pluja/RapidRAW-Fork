@@ -1623,6 +1623,9 @@
         "toggle_presets": "Alternar panel de Ajustes preestablecidos",
         "toggle_right_panel": "Alternar panel derecho",
         "undo": "Deshacer ajuste",
+        "workspace_develop": "Ir al espacio Revelado",
+        "workspace_export": "Ir al espacio Exportar",
+        "workspace_library": "Ir al espacio Biblioteca",
         "zoom_100": "Hacer zoom al 100%",
         "zoom_fit": "Ajustar al área de visualización",
         "zoom_in": "Acercar",
@@ -1993,6 +1996,16 @@
         "rgb": "Superposición RGB",
         "showClipping": "Mostrar advertencias de recorte",
         "vectorscope": "Vectorescopio"
+      }
+    },
+    "workspaces": {
+      "develop": "Revelado",
+      "export": "Exportar",
+      "library": "Biblioteca",
+      "tooltips": {
+        "develop": "Edita la foto seleccionada",
+        "export": "Exporta las fotos seleccionadas",
+        "library": "Explora y selecciona tus fotos"
       }
     }
   }

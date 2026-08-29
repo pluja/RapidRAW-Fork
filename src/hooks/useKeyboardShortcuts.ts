@@ -375,6 +375,29 @@ export const useKeyboardShortcuts = ({
           s.ui.setPanel(Panel.Export);
         },
       },
+      workspace_library: {
+        shouldFire: () => true,
+        execute: (e: any, s: any) => {
+          e.preventDefault();
+          s.ui.setWorkspace('library');
+        },
+      },
+      workspace_develop: {
+        shouldFire: (s: any) =>
+          !(s.ui.activeWorkspace === 'develop' && s.ui.activeView === 'editor') &&
+          (!!s.library.libraryActivePath || !!s.editor.selectedImage),
+        execute: (e: any, s: any) => {
+          e.preventDefault();
+          handleImageSelect(s.library.libraryActivePath ?? s.editor.selectedImage.path, true);
+        },
+      },
+      workspace_export: {
+        shouldFire: () => true,
+        execute: (e: any, s: any) => {
+          e.preventDefault();
+          s.ui.setWorkspace('export');
+        },
+      },
       toggle_left_panel: {
         shouldFire: () => true,
         execute: (e: any, s: any) => {

@@ -1590,6 +1590,9 @@
         "toggle_presets": "Toggle Presets panel",
         "toggle_right_panel": "Toggle Right Panel",
         "undo": "Undo adjustment",
+        "workspace_develop": "Go to Develop workspace",
+        "workspace_export": "Go to Export workspace",
+        "workspace_library": "Go to Library workspace",
         "zoom_100": "Zoom to 100%",
         "zoom_fit": "Zoom to fit",
         "zoom_in": "Zoom in",
@@ -1959,6 +1962,16 @@
         "rgb": "RGB Overlay",
         "showClipping": "Show Clipping Warnings",
         "vectorscope": "Vectorscope"
+      }
+    },
+    "workspaces": {
+      "develop": "Develop",
+      "export": "Export",
+      "library": "Library",
+      "tooltips": {
+        "develop": "Edit the selected photo",
+        "export": "Export the selected photos",
+        "library": "Browse and cull your photos"
       }
     }
   }

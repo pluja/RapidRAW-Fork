@@ -5,7 +5,10 @@ import {
   UiVisibility,
   CullingSuggestions,
   PanelRegion,
+  ViewWorkspace,
+  WorkspaceId,
   WorkspaceState,
+  WORKSPACE_IDS,
 } from '../components/ui/AppProperties';
 
 export type SwitcherPlacement = 'bottom' | 'right' | 'left' | 'top';
@@ -112,13 +115,8 @@ export const DEFAULT_PANEL_WIDTH = 350;
 export const DEFAULT_PANEL_SECTION_HEIGHT = 450;
 export const DEFAULT_BOTTOM_PANEL_HEIGHT = 144;
 
-export function reconcileWorkspace(
-  savedWorkspace: WorkspaceState | undefined,
-  isTetheringSupported: boolean,
-): WorkspaceState {
-  const allowedPanels = new Set(ALL_PANELS.filter((p) => p !== Panel.Tethering || isTetheringSupported));
-
-  const defaultWorkspace: WorkspaceState = {
+function baseWorkspace(isTetheringSupported: boolean): WorkspaceState {
+  return {
     leftPanelWidth: DEFAULT_PANEL_WIDTH,
     rightPanelWidth: DEFAULT_PANEL_WIDTH,
     leftTopHeight: DEFAULT_PANEL_SECTION_HEIGHT,
@@ -142,6 +140,15 @@ export function reconcileWorkspace(
       rightBottom: 'right',
     },
   };
+}
+
+export function reconcileWorkspace(
+  savedWorkspace: WorkspaceState | undefined,
+  isTetheringSupported: boolean,
+  defaults?: WorkspaceState,
+): WorkspaceState {
+  const allowedPanels = new Set(ALL_PANELS.filter((p) => p !== Panel.Tethering || isTetheringSupported));
+  const defaultWorkspace = defaults ?? baseWorkspace(isTetheringSupported);
 
   if (!savedWorkspace || !savedWorkspace.panelLayout) {
     return defaultWorkspace;
@@ -203,8 +210,116 @@ export function reconcileWorkspace(
   };
 }
 
+export const WORKSPACE_VIEWS: Record<WorkspaceId, string> = {
+  library: 'library',
+  develop: 'editor',
+  export: 'library',
+};
+
+function defaultViewWorkspace(id: WorkspaceId, isTetheringSupported: boolean): ViewWorkspace {
+  const base = baseWorkspace(isTetheringSupported);
+  const withActive = (leftTop: Panel, uiVisibility: UiVisibility): ViewWorkspace => ({
+    ...base,
+    activePanels: { ...base.activePanels, leftTop },
+    uiVisibility,
+  });
+
+  switch (id) {
+    case 'develop':
+      return withActive(Panel.Metadata, { filmstrip: true, leftPanel: false, rightPanel: true });
+    case 'export':
+      return withActive(Panel.Export, { filmstrip: false, leftPanel: true, rightPanel: false });
+    default:
+      return withActive(Panel.FolderTree, { filmstrip: true, leftPanel: true, rightPanel: false });
+  }
+}
+
+const EVERYTHING_VISIBLE: UiVisibility = { filmstrip: true, leftPanel: true, rightPanel: true };
+
+export function reconcileWorkspaces(
+  saved: Partial<Record<WorkspaceId, ViewWorkspace>> | undefined,
+  legacy: WorkspaceState | undefined,
+  isTetheringSupported: boolean,
+  canCollapsePanels = true,
+): Record<WorkspaceId, ViewWorkspace> {
+  const result = {} as Record<WorkspaceId, ViewWorkspace>;
+
+  WORKSPACE_IDS.forEach((id) => {
+    const defaults = defaultViewWorkspace(id, isTetheringSupported);
+    const savedForId = saved?.[id];
+
+    // Collapsing hides the switcher rail along with the panel, and Android shows neither the
+    // bottom bar toggles nor the workspace tabs, so a collapsed panel there cannot be reopened.
+    const uiVisibility = !canCollapsePanels
+      ? EVERYTHING_VISIBLE
+      : { ...defaults.uiVisibility, ...savedForId?.uiVisibility };
+
+    if (savedForId) {
+      result[id] = { ...reconcileWorkspace(savedForId, isTetheringSupported, defaults), uiVisibility };
+      return;
+    }
+
+    // A pre-workspaces install has one shared layout. Its sizing and switcher placement are real
+    // preferences; its arrangement is not, since every view was forced to share it.
+    result[id] = {
+      ...defaults,
+      uiVisibility,
+      leftPanelWidth: legacy?.leftPanelWidth || defaults.leftPanelWidth,
+      rightPanelWidth: legacy?.rightPanelWidth || defaults.rightPanelWidth,
+      leftTopHeight: legacy?.leftTopHeight || defaults.leftTopHeight,
+      rightTopHeight: legacy?.rightTopHeight || defaults.rightTopHeight,
+      panelSwitcherPlacement: {
+        ...defaults.panelSwitcherPlacement,
+        ...(legacy?.panelSwitcherPlacement || {}),
+      },
+    };
+  });
+
+  return result;
+}
+
+function liveWorkspace(state: UIState): ViewWorkspace {
+  return {
+    leftPanelWidth: state.leftPanelWidth,
+    rightPanelWidth: state.rightPanelWidth,
+    leftTopHeight: state.leftTopHeight,
+    rightTopHeight: state.rightTopHeight,
+    panelLayout: state.panelLayout,
+    activePanels: state.activePanels,
+    panelSwitcherPlacement: state.panelSwitcherPlacement,
+    uiVisibility: state.uiVisibility,
+  };
+}
+
+function enterWorkspace(state: UIState, target: WorkspaceId): Partial<UIState> {
+  const workspaces = { ...state.workspaces, [state.activeWorkspace]: liveWorkspace(state) };
+  const next = workspaces[target];
+  const focused = next.activePanels.rightTop ?? next.activePanels.leftTop ?? null;
+
+  return {
+    ...next,
+    workspaces,
+    activeWorkspace: target,
+    lastGridWorkspace: target === 'develop' ? state.lastGridWorkspace : target,
+    activePanel: focused,
+    renderedPanel: focused,
+  };
+}
+
+function workspaceForView(view: string, state: UIState): WorkspaceId | null {
+  if (view === 'editor') return 'develop';
+  if (view === 'library') return state.lastGridWorkspace;
+  return null;
+}
+
 interface UIState {
   activeView: string;
+  activeWorkspace: WorkspaceId;
+  lastGridWorkspace: WorkspaceId;
+  workspaces: Record<WorkspaceId, ViewWorkspace>;
+  setWorkspace: (id: WorkspaceId) => void;
+  loadWorkspaces: (workspaces: Record<WorkspaceId, ViewWorkspace>) => void;
+  snapshotWorkspaces: () => Record<WorkspaceId, ViewWorkspace>;
   isFullScreen: boolean;
   isWindowFullScreen: boolean;
   isInstantTransition: boolean;
@@ -266,16 +381,19 @@ interface UIState {
   setCustomEscapeHandler: (handler: (() => void) | null) => void;
   searchFocusRequest: number;
   requestSearchFocus: () => void;
-  resetWorkspaceLayout: (isTetheringSupported?: boolean) => WorkspaceState;
+  resetWorkspaceLayout: (isTetheringSupported?: boolean) => ViewWorkspace;
 }
 
 export const useUIStore = create<UIState>((set, get) => ({
   activeView: 'library',
+  activeWorkspace: 'library',
+  lastGridWorkspace: 'library',
+  workspaces: reconcileWorkspaces(undefined, undefined, false),
   isFullScreen: false,
   isWindowFullScreen: false,
   isInstantTransition: false,
   isLayoutReady: false,
-  uiVisibility: { filmstrip: true, leftPanel: true, rightPanel: true },
+  uiVisibility: { filmstrip: true, leftPanel: true, rightPanel: false },
   isLibraryExportPanelVisible: false,
   isSettingsOpen: false,
 
@@ -369,7 +487,34 @@ export const useUIStore = create<UIState>((set, get) => ({
   cullingModalState: { isOpen: false, suggestions: null, progress: null, error: null, pathsToCull: [] },
   collageModalState: { isOpen: false, sourceImages: [] },
 
-  setUI: (updater) => set((state) => (typeof updater === 'function' ? updater(state) : updater)),
+  setUI: (updater) =>
+    set((state) => {
+      const patch = typeof updater === 'function' ? updater(state) : updater;
+      if (patch.activeView === undefined || patch.activeView === state.activeView) return patch;
+
+      const target = workspaceForView(patch.activeView, state);
+      if (!target || target === state.activeWorkspace) return patch;
+      return { ...enterWorkspace(state, target), ...patch };
+    }),
+
+  setWorkspace: (id) =>
+    set((state) => {
+      const activeView = WORKSPACE_VIEWS[id];
+      if (id !== state.activeWorkspace) return { ...enterWorkspace(state, id), activeView };
+      return state.activeView === activeView ? state : { activeView };
+    }),
+
+  loadWorkspaces: (workspaces) =>
+    set((state) => {
+      const next = workspaces[state.activeWorkspace];
+      const focused = next.activePanels.rightTop ?? next.activePanels.leftTop ?? null;
+      return { workspaces, ...next, activePanel: focused, renderedPanel: focused };
+    }),
+
+  snapshotWorkspaces: () => {
+    const state = get();
+    return { ...state.workspaces, [state.activeWorkspace]: liveWorkspace(state) };
+  },
 
   setLayoutDragItem: (panel) => set({ activeLayoutDragItem: panel }),
 
@@ -487,20 +632,15 @@ export const useUIStore = create<UIState>((set, get) => ({
   },
 
   resetWorkspaceLayout: (isTetheringSupported = false) => {
-    const defaultWorkspace = reconcileWorkspace(undefined, isTetheringSupported);
+    const workspaces = reconcileWorkspaces(undefined, undefined, isTetheringSupported);
+    const current = workspaces[get().activeWorkspace];
     set({
-      leftPanelWidth: defaultWorkspace.leftPanelWidth,
-      rightPanelWidth: defaultWorkspace.rightPanelWidth,
-      leftTopHeight: defaultWorkspace.leftTopHeight,
-      rightTopHeight: defaultWorkspace.rightTopHeight,
-      panelLayout: defaultWorkspace.panelLayout,
-      activePanels: defaultWorkspace.activePanels,
-      panelSwitcherPlacement: defaultWorkspace.panelSwitcherPlacement,
-      uiVisibility: { filmstrip: true, leftPanel: true, rightPanel: true },
-      activePanel: defaultWorkspace.activePanels.rightTop || null,
-      renderedPanel: defaultWorkspace.activePanels.rightTop || null,
+      workspaces,
+      ...current,
+      activePanel: current.activePanels.rightTop || null,
+      renderedPanel: current.activePanels.rightTop || null,
     });
-    return defaultWorkspace;
+    return current;
   },
 
   customEscapeHandler: null,

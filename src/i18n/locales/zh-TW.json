@@ -1588,6 +1588,9 @@
         "toggle_presets": "切換預設面板",
         "toggle_right_panel": "切換右側面板",
         "undo": "復原調整",
+        "workspace_develop": "切換到編輯相片",
+        "workspace_export": "切換到匯出",
+        "workspace_library": "切換到圖庫",
         "zoom_100": "縮放到 100%",
         "zoom_fit": "縮放以適應",
         "zoom_in": "放大",
@@ -1957,6 +1960,16 @@
         "rgb": "RGB 疊加",
         "showClipping": "顯示裁剪警告",
         "vectorscope": "向量示波器"
+      }
+    },
+    "workspaces": {
+      "develop": "編輯相片",
+      "export": "匯出",
+      "library": "圖庫",
+      "tooltips": {
+        "develop": "編輯所選相片",
+        "export": "匯出所選相片",
+        "library": "瀏覽並挑選相片"
       }
     }
   }

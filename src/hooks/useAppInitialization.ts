@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useShallow } from 'zustand/react/shallow';
 import { useSettingsStore } from '../store/useSettingsStore';
-import { useUIStore, reconcileWorkspace } from '../store/useUIStore';
+import { useUIStore, reconcileWorkspaces } from '../store/useUIStore';
 import { useLibraryStore } from '../store/useLibraryStore';
 import { useEditorStore } from '../store/useEditorStore';
 import { useProcessStore } from '../store/useProcessStore';
@@ -80,12 +80,10 @@ export const useAppInitialization = ({
     })),
   );
 
-  const { uiVisibility, setUI } = useUIStore(
-    useShallow((state) => ({
-      uiVisibility: state.uiVisibility,
-      setUI: state.setUI,
-    })),
-  );
+  const loadWorkspaces = useUIStore((state) => state.loadWorkspaces);
+
+  const activeWorkspace = useUIStore((state) => state.activeWorkspace);
+  const storedWorkspaces = useUIStore((state) => state.workspaces);
 
   const workspaceProps = useUIStore(
     useShallow((state) => ({
@@ -96,6 +94,7 @@ export const useAppInitialization = ({
       panelLayout: state.panelLayout,
       activePanels: state.activePanels,
       panelSwitcherPlacement: state.panelSwitcherPlacement,
+      uiVisibility: state.uiVisibility,
     })),
   );
 
@@ -168,8 +167,13 @@ export const useAppInitialization = ({
           handleSettingsChange(settings);
         }
 
-        const reconciledWorkspace = reconcileWorkspace(settings?.workspace, isTetheringSupported);
-        settings.workspace = reconciledWorkspace;
+        const reconciledWorkspaces = reconcileWorkspaces(
+          settings?.workspaces,
+          settings?.workspace,
+          isTetheringSupported,
+          !isAndroid,
+        );
+        settings.workspaces = reconciledWorkspaces;
 
         setAppSettings(settings);
         i18n.changeLanguage(settings.language);
@@ -188,19 +192,7 @@ export const useAppInitialization = ({
 
         if (settings?.theme) setTheme(settings.theme);
 
-        if (settings?.uiVisibility) {
-          setUI((state) => ({ uiVisibility: { ...state.uiVisibility, ...settings.uiVisibility } }));
-        }
-
-        setUI({
-          leftPanelWidth: reconciledWorkspace.leftPanelWidth,
-          rightPanelWidth: reconciledWorkspace.rightPanelWidth,
-          leftTopHeight: reconciledWorkspace.leftTopHeight,
-          rightTopHeight: reconciledWorkspace.rightTopHeight,
-          panelLayout: reconciledWorkspace.panelLayout,
-          activePanels: reconciledWorkspace.activePanels,
-          panelSwitcherPlacement: reconciledWorkspace.panelSwitcherPlacement,
-        });
+        loadWorkspaces(reconciledWorkspaces);
 
         if (settings?.isWaveformVisible !== undefined) setEditor({ isWaveformVisible: settings.isWaveformVisible });
         if (settings?.activeWaveformChannel) setEditor({ activeWaveformChannel: settings.activeWaveformChannel });
@@ -282,7 +274,7 @@ export const useAppInitialization = ({
     isAndroid,
     setAppSettings,
     setTheme,
-    setUI,
+    loadWorkspaces,
     defaultLibraryViewMode,
     defaultThumbnailSize,
     setSortCriteria,
@@ -298,24 +290,16 @@ export const useAppInitialization = ({
   useEffect(() => {
     if (isInitialMount.current || !appSettings) return;
 
-    const currentWorkspaceStr = JSON.stringify(appSettings.workspace || {});
-    const newWorkspaceStr = JSON.stringify(workspaceProps);
+    const snapshot = { ...storedWorkspaces, [activeWorkspace]: workspaceProps };
 
-    if (currentWorkspaceStr !== newWorkspaceStr) {
+    if (JSON.stringify(appSettings.workspaces || {}) !== JSON.stringify(snapshot)) {
       const timeoutId = setTimeout(() => {
-        handleSettingsChange({ ...appSettings, workspace: workspaceProps });
+        handleSettingsChange({ ...appSettings, workspaces: snapshot });
       }, 500);
 
       return () => clearTimeout(timeoutId);
     }
-  }, [workspaceProps, appSettings, handleSettingsChange]);
-
-  useEffect(() => {
-    if (isInitialMount.current || !appSettings) return;
-    if (JSON.stringify(appSettings.uiVisibility) !== JSON.stringify(uiVisibility)) {
-      handleSettingsChange({ ...appSettings, uiVisibility });
-    }
-  }, [uiVisibility, appSettings, handleSettingsChange]);
+  }, [workspaceProps, storedWorkspaces, activeWorkspace, appSettings, handleSettingsChange]);
 
   useEffect(() => {
     if (isInitialMount.current || !appSettings) return;

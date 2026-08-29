@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, type ReactNode } from 'react';
 import { platform } from '@tauri-apps/plugin-os';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Minus, Square, X } from 'lucide-react';
@@ -20,7 +20,7 @@ const RestoreDownIcon = ({ size = 14, className = '' }) => (
   </svg>
 );
 
-export default function TitleBar() {
+export default function TitleBar({ center }: { center?: ReactNode }) {
   const [osPlatform, setOsPlatform] = useState('');
   const [isMaximized, setIsMaximized] = useState(false);
 
@@ -118,6 +118,8 @@ export default function TitleBar() {
             <p className="text-sm font-semibold text-text-secondary pointer-events-none">RapidRAW</p>
           </div>
         </div>
+        <div data-tauri-drag-region className="flex-1 h-full" />
+        {center && <div className="flex items-center h-full shrink-0 z-10">{center}</div>}
         <div data-tauri-drag-region className="flex-1 h-full" />
         <div className="flex items-center h-full z-10">
           {isLinux && (

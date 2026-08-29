@@ -218,6 +218,24 @@ export const KEYBIND_DEFINITIONS: KeybindDefinition[] = [
     section: 'panels',
   },
   {
+    action: 'workspace_library',
+    description: 'settings.keybinds.actions.workspace_library',
+    defaultCombo: ['ctrl', 'alt', 'Digit1'],
+    section: 'view',
+  },
+  {
+    action: 'workspace_develop',
+    description: 'settings.keybinds.actions.workspace_develop',
+    defaultCombo: ['ctrl', 'alt', 'Digit2'],
+    section: 'view',
+  },
+  {
+    action: 'workspace_export',
+    description: 'settings.keybinds.actions.workspace_export',
+    defaultCombo: ['ctrl', 'alt', 'Digit3'],
+    section: 'view',
+  },
+  {
     action: 'toggle_left_panel',
     description: 'settings.keybinds.actions.toggle_left_panel',
     defaultCombo: ['ctrl', 'shift', 'KeyB'],

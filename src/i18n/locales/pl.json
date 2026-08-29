@@ -1658,6 +1658,9 @@
         "toggle_presets": "Przełącz panel Presety",
         "toggle_right_panel": "Przełącz prawy panel",
         "undo": "Cofnij korektę",
+        "workspace_develop": "Przejdź do obszaru Wywoływanie",
+        "workspace_export": "Przejdź do obszaru Eksport",
+        "workspace_library": "Przejdź do obszaru Biblioteka",
         "zoom_100": "Powiększ do 100%",
         "zoom_fit": "Dopasuj do ekranu",
         "zoom_in": "Przybliż",
@@ -2029,6 +2032,16 @@
         "rgb": "Nakładka RGB",
         "showClipping": "Pokaż ostrzeżenia przed przycięciem",
         "vectorscope": "Wektroskop"
+      }
+    },
+    "workspaces": {
+      "develop": "Wywoływanie",
+      "export": "Eksport",
+      "library": "Biblioteka",
+      "tooltips": {
+        "develop": "Edytuj wybrane zdjęcie",
+        "export": "Eksportuj wybrane zdjęcia",
+        "library": "Przeglądaj i selekcjonuj zdjęcia"
       }
     }
   }
