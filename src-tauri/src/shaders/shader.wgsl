@@ -1359,6 +1359,22 @@ fn apply_dehaze(color: vec3<f32>, blurred_color_input_space: vec3<f32>, is_raw: 
     }
 }
 
+/// How the tolerances in noise reduction follow brightness.
+///
+/// Sensor noise grows as the square root of the signal, over a floor where read
+/// noise dominates. A threshold held flat in absolute luminance therefore means
+/// something different at every brightness: at 0.025 it came to two and a half
+/// times a deep shadow's own value and a twenty-fifth of a highlight's, so the
+/// filter flattened shadows into mush and left highlights untouched. Normalised
+/// at mid grey, so a setting that suited the midtones still suits them.
+const NR_REFERENCE_LUMA: f32 = 0.18;
+const NR_READ_NOISE_FLOOR: f32 = 0.0005;
+
+fn nr_noise_scale(luma: f32) -> f32 {
+    return sqrt(max(luma, 0.0) + NR_READ_NOISE_FLOOR)
+         / sqrt(NR_REFERENCE_LUMA + NR_READ_NOISE_FLOOR);
+}
+
 fn apply_noise_reduction(
     center_linear: vec3<f32>,
     coords_i: vec2<i32>,
@@ -1380,6 +1396,7 @@ fn apply_noise_reduction(
     let center_chroma = center_linear - vec3<f32>(center_luma);
 
     let res_factor = clamp(sqrt(scale), 0.5, 2.0);
+    let noise_scale = nr_noise_scale(center_luma);
 
     var new_luma   = center_luma;
     var new_chroma = center_chroma;
@@ -1433,7 +1450,7 @@ fn apply_noise_reduction(
         }
 
         let luma_range    = lmax - lmin;
-        let edge_strength = smoothstep(0.04, 0.20, luma_range);
+        let edge_strength = smoothstep(0.04 * noise_scale, 0.20 * noise_scale, luma_range);
         let edge_midpoint = (lmin + lmax) * 0.5;
         let center_side   = center_luma > edge_midpoint;
 
@@ -1441,7 +1458,7 @@ fn apply_noise_reduction(
             mix(0.025, 0.075, l_curve),
             mix(0.010, 0.025, l_curve),
             edge_strength
-        );
+        ) * noise_scale;
 
         var samp_gate: array<f32, 25>;
         var sum_a: f32 = 0.0;
@@ -1459,7 +1476,7 @@ fn apply_noise_reduction(
         }
         let initial_mean = sum_a / max(w_a, 1e-4);
 
-        let outlier_tol = mix(0.07, 0.025, edge_strength);
+        let outlier_tol = mix(0.07, 0.025, edge_strength) * noise_scale;
         var sum_b: f32 = 0.0;
         var w_b:   f32 = 0.0;
         for (var k: u32 = 0u; k < 25u; k = k + 1u) {
@@ -1489,7 +1506,7 @@ fn apply_noise_reduction(
         let c_spatial = mix(2.0, 3.5, c_curve);
         let c_spat_n  = -1.0 / max(2.0 * c_spatial * c_spatial, 1e-6);
 
-        let luma_tol = mix(0.12, 0.04, c_curve);
+        let luma_tol = mix(0.12, 0.04, c_curve) * noise_scale;
         let luma_n   = -1.0 / max(2.0 * luma_tol * luma_tol, 1e-6);
 
         // Chroma is measured as the colour minus its own luminance, and the
@@ -1499,7 +1516,7 @@ fn apply_noise_reduction(
         // 2.37, median 1.40; one scalar cannot match every direction, and the
         // median is the honest choice. Left unscaled the filter reached that
         // much further and smoothed across colour edges it used to keep.
-        let chroma_tol = mix(0.143, 0.057, c_curve);
+        let chroma_tol = mix(0.143, 0.057, c_curve) * noise_scale;
         let chroma_n   = -1.0 / max(2.0 * chroma_tol * chroma_tol, 1e-6);
 
         let jh1 = hash(vec2<f32>(coords_i) + vec2<f32>(43.7, 91.1));

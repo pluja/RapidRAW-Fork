@@ -488,6 +488,55 @@ mod tests {
         );
     }
 
+    /// Noise reduction gates on how far a neighbour's luminance sits from the
+    /// centre's. Sensor noise grows as the square root of the signal, so a flat
+    /// threshold means something different at every brightness.
+    #[test]
+    fn noise_thresholds_follow_the_brightness_they_are_measured_against() {
+        const SHADER_REFERENCE_LUMA: f32 = 0.18;
+        const SHADER_READ_NOISE_FLOOR: f32 = 0.0005;
+
+        let scale = |luma: f32| {
+            (luma.max(0.0) + SHADER_READ_NOISE_FLOOR).sqrt()
+                / (SHADER_REFERENCE_LUMA + SHADER_READ_NOISE_FLOOR).sqrt()
+        };
+
+        // Mid grey is the anchor, so a setting tuned there is unchanged.
+        assert!(
+            (scale(SHADER_REFERENCE_LUMA) - 1.0).abs() < 1e-6,
+            "mid grey should be the anchor, got {}",
+            scale(SHADER_REFERENCE_LUMA)
+        );
+
+        // A flat threshold was two and a half times a deep shadow's own value.
+        let flat = 0.025f32;
+        let deep_shadow = 0.01f32;
+        assert!(
+            flat / deep_shadow > 2.0 && flat * scale(deep_shadow) / deep_shadow < 1.0,
+            "a deep shadow went from {:.1} to {:.2} times its own value",
+            flat / deep_shadow,
+            flat * scale(deep_shadow) / deep_shadow
+        );
+
+        // Highlights were barely touched and should now get more reach.
+        let highlight = 0.70f32;
+        assert!(
+            scale(highlight) > 1.5,
+            "highlights only gained {}x",
+            scale(highlight)
+        );
+
+        // The curve has to rise with brightness everywhere, or some zone would
+        // be treated more harshly than a darker one.
+        let mut previous = 0.0f32;
+        for step in 0..64 {
+            let luma = step as f32 / 63.0;
+            let current = scale(luma);
+            assert!(current >= previous, "scaling fell at luma {luma}");
+            previous = current;
+        }
+    }
+
     #[test]
     fn shader_constants_match_this_module() {
         const SHADER_PROPHOTO_TO_SRGB: Mat3 = [
