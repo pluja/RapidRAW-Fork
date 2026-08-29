@@ -211,10 +211,54 @@ const HSL_RANGES: array<HslRange, 8> = array<HslRange, 8>(
 @group(0) @binding(10) var flare_texture: texture_2d<f32>;
 @group(0) @binding(11) var flare_sampler: sampler;
 
-const LUMA_COEFF = vec3<f32>(0.2126, 0.7152, 0.0722);
+// Relative luminance for the ProPhoto working space. Rec.709 weights would
+// misweight every luma-driven operator now that the pipeline is not sRGB.
+const LUMA_COEFF = vec3<f32>(0.2880402, 0.7118741, 0.0000857);
+const SRGB_LUMA = vec3<f32>(0.2126, 0.7152, 0.0722);
+
+// Rows of the linear ProPhoto (D50) to linear sRGB (D65) Bradford-adapted
+// transform and its inverse, generated from color_space.rs.
+const PROPHOTO_TO_SRGB_R0 = vec3<f32>(2.0340760, -0.7273341, -0.3067416);
+const PROPHOTO_TO_SRGB_R1 = vec3<f32>(-0.2288132, 1.2317301, -0.0029170);
+const PROPHOTO_TO_SRGB_R2 = vec3<f32>(-0.0085698, -0.1532867, 1.1618567);
+
+const SRGB_TO_PROPHOTO_R0 = vec3<f32>(0.5293459, 0.3300728, 0.1405812);
+const SRGB_TO_PROPHOTO_R1 = vec3<f32>(0.0983743, 0.8734611, 0.0281647);
+const SRGB_TO_PROPHOTO_R2 = vec3<f32>(0.0168832, 0.1176725, 0.8654441);
 
 fn get_luma(c: vec3<f32>) -> f32 {
     return dot(c, LUMA_COEFF);
+}
+
+fn prophoto_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(
+        dot(PROPHOTO_TO_SRGB_R0, c),
+        dot(PROPHOTO_TO_SRGB_R1, c),
+        dot(PROPHOTO_TO_SRGB_R2, c),
+    );
+}
+
+fn srgb_to_prophoto(c: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(
+        dot(SRGB_TO_PROPHOTO_R0, c),
+        dot(SRGB_TO_PROPHOTO_R1, c),
+        dot(SRGB_TO_PROPHOTO_R2, c),
+    );
+}
+
+/// Desaturates a colour toward its own luminance until its darkest channel
+/// reaches zero, so a colour outside sRGB loses saturation rather than the hue
+/// and luminance a per-channel clamp would shift.
+fn gamut_clip_srgb(c: vec3<f32>) -> vec3<f32> {
+    let min_c = min(c.r, min(c.g, c.b));
+    if (min_c >= 0.0) {
+        return c;
+    }
+    let luma = dot(c, SRGB_LUMA);
+    if (luma <= 0.0) {
+        return vec3<f32>(0.0);
+    }
+    return mix(vec3<f32>(luma), c, luma / (luma - min_c));
 }
 
 fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
@@ -1631,7 +1675,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     var initial_linear_rgb: vec3<f32>;
     let is_raw = adjustments.global.is_raw_image;
     if (is_raw == 0u) {
-        initial_linear_rgb = srgb_to_linear(color_from_texture);
+        initial_linear_rgb = srgb_to_prophoto(srgb_to_linear(color_from_texture));
     } else {
         initial_linear_rgb = color_from_texture;
     }
@@ -1820,24 +1864,30 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         }
     }
 
+    // AgX and the sRGB transfer functions below are all defined against sRGB
+    // primaries, so the working space resolves once here rather than inside each
+    // of them. Phase 3 moves AgX into the working space and replaces this clip
+    // with real gamut compression.
+    let display_linear = gamut_clip_srgb(prophoto_to_srgb(composite_rgb_linear));
+
     var default_tonemapped: vec3<f32>;
     if (adjustments.global.tonemapper_mode == 1u) {
-        default_tonemapped = agx_full_transform(composite_rgb_linear);
+        default_tonemapped = agx_full_transform(display_linear);
     } else if (is_raw == 1u) {
-        var srgb_emulated = linear_to_srgb(composite_rgb_linear);
+        var srgb_emulated = linear_to_srgb(display_linear);
         const BRIGHTNESS_GAMMA: f32 = 1.1;
         srgb_emulated = pow(srgb_emulated, vec3<f32>(1.0 / BRIGHTNESS_GAMMA));
         const CONTRAST_MIX: f32 = 0.75;
         let contrast_curve = srgb_emulated * srgb_emulated * (3.0 - 2.0 * srgb_emulated);
         default_tonemapped = mix(srgb_emulated, contrast_curve, CONTRAST_MIX);
     } else {
-        default_tonemapped = linear_to_srgb(composite_rgb_linear);
+        default_tonemapped = linear_to_srgb(display_linear);
     }
     var base_srgb: vec3<f32>;
     let is_scene_lut = (adjustments.global.has_lut == 1u && adjustments.global.lut_is_scene_referred == 1u);
 
     if (is_scene_lut) {
-        let vlog_encoded = linear_to_vlog(composite_rgb_linear);
+        let vlog_encoded = linear_to_vlog(display_linear);
         let lut_color = sample_lut_tetrahedral(vlog_encoded);
         base_srgb = mix(default_tonemapped, lut_color, adjustments.global.lut_intensity);
     } else {

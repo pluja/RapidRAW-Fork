@@ -1114,7 +1114,14 @@ pub fn inverse_transform_point(
     (x, y)
 }
 
+/// Resolves the ProPhoto working space and applies the default display curve.
+///
+/// Raw data reaching the CPU paths is linear ProPhoto, so it must leave the
+/// working space here exactly as the GPU pipeline does before its own display
+/// transform. Every caller guards this behind an is_raw check.
 pub fn apply_cpu_default_raw_processing(image: &mut DynamicImage) {
+    apply_prophoto_to_srgb_in_place(image);
+
     let mut f32_image = image.to_rgb32f();
 
     const GAMMA: f32 = 2.38;
@@ -1136,6 +1143,38 @@ pub fn apply_cpu_default_raw_processing(image: &mut DynamicImage) {
     });
 
     *image = DynamicImage::ImageRgb32F(f32_image);
+}
+
+/// Converts linear ProPhoto working-space data to linear sRGB for output.
+pub fn apply_prophoto_to_srgb(mut image: DynamicImage) -> DynamicImage {
+    apply_prophoto_to_srgb_in_place(&mut image);
+    image
+}
+
+pub fn apply_prophoto_to_srgb_in_place(image: &mut DynamicImage) {
+    use crate::color_space::prophoto_to_srgb_gamut_clipped;
+
+    match image {
+        DynamicImage::ImageRgb32F(img) => {
+            img.par_chunks_mut(3).for_each(|p| {
+                let c = prophoto_to_srgb_gamut_clipped([p[0], p[1], p[2]]);
+                p[0] = c[0];
+                p[1] = c[1];
+                p[2] = c[2];
+            });
+        }
+        DynamicImage::ImageRgba32F(img) => {
+            img.par_chunks_mut(4).for_each(|p| {
+                let c = prophoto_to_srgb_gamut_clipped([p[0], p[1], p[2]]);
+                p[0] = c[0];
+                p[1] = c[1];
+                p[2] = c[2];
+            });
+        }
+        // Working-space data is always float. An integer buffer here is
+        // already display-encoded and converting it would corrupt it.
+        _ => {}
+    }
 }
 
 pub fn apply_srgb_to_linear(mut image: DynamicImage) -> DynamicImage {

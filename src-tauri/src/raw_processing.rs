@@ -1,9 +1,11 @@
+use crate::color_space::{self, Mat3};
 use crate::image_processing::apply_orientation;
 use anyhow::{Result, anyhow};
 use image::{DynamicImage, ImageBuffer, Rgba};
 use rawler::{
     decoders::{Orientation, RawDecodeParams},
     imgop::develop::{DemosaicAlgorithm, Intermediate, ProcessingStep, RawDevelop},
+    imgop::xyz::Illuminant,
     rawimage::{RawImage, RawPhotometricInterpretation},
     rawsource::RawSource,
 };
@@ -34,6 +36,35 @@ fn is_linear_raw_format(raw_image: &RawImage) -> bool {
         raw_image.photometric,
         RawPhotometricInterpretation::LinearRaw
     )
+}
+
+/// Builds the camera-native to linear ProPhoto transform for this image.
+///
+/// Returns None when the file carries no usable 3x3 colour matrix, in which
+/// case the caller leaves rawler's own sRGB calibration in place rather than
+/// rendering the image wrong.
+fn camera_to_working_space(raw_image: &RawImage) -> Option<Mat3> {
+    if raw_image.cpp == 4 {
+        return None;
+    }
+
+    let (_illuminant, matrix) = raw_image
+        .color_matrix
+        .iter()
+        .find(|(illuminant, _)| **illuminant == Illuminant::D65)
+        .or_else(|| raw_image.color_matrix.iter().next())?;
+
+    if matrix.len() < 9 {
+        return None;
+    }
+
+    let mut xyz2cam: Mat3 = [[0.0; 3]; 3];
+    for i in 0..3 {
+        for j in 0..3 {
+            xyz2cam[i][j] = matrix[i * 3 + j];
+        }
+    }
+    color_space::cam_to_prophoto(xyz2cam)
 }
 
 #[inline]
@@ -102,6 +133,12 @@ fn develop_internal(
         *level = u32::MAX;
     }
 
+    let working_transform = if apply_calibration {
+        camera_to_working_space(&raw_image)
+    } else {
+        None
+    };
+
     let mut developer = RawDevelop::default();
 
     if is_linear_format {
@@ -117,8 +154,23 @@ fn develop_internal(
         developer.steps.retain(|&step| step != ProcessingStep::SRgb);
     }
 
+    // rawler's Calibrate resolves to sRGB primaries and clips there, discarding
+    // every colour the sensor recorded outside that gamut before any adjustment
+    // runs. Where we have our own transform we take the camera-native data.
+    if working_transform.is_some() {
+        developer
+            .steps
+            .retain(|&step| step != ProcessingStep::Calibrate);
+    }
+
     raw_image.wb_coeffs =
         crate::multi_exposure::neutralize_wb_if_multiexposure(raw_image.wb_coeffs, file_bytes);
+
+    let wb = if raw_image.wb_coeffs[0].is_nan() {
+        [1.0f32; 4]
+    } else {
+        raw_image.wb_coeffs
+    };
 
     check_cancel()?;
     let mut developed_intermediate = developer.develop_intermediate(&raw_image)?;
@@ -158,6 +210,16 @@ fn develop_internal(
                     r = srgb_to_linear(r.clamp(0.0, 1.0));
                     g = srgb_to_linear(g.clamp(0.0, 1.0));
                     b = srgb_to_linear(b.clamp(0.0, 1.0));
+                }
+
+                if let Some(matrix) = working_transform {
+                    let working = color_space::apply(&matrix, [r * wb[0], g * wb[1], b * wb[2]]);
+                    // The residual out-of-gamut fraction in ProPhoto is a small
+                    // fraction of a percent, and letting it stay negative would
+                    // reach operators that take sqrt and pow of their input.
+                    r = working[0].max(0.0);
+                    g = working[1].max(0.0);
+                    b = working[2].max(0.0);
                 }
 
                 let max_c = r.max(g).max(b);

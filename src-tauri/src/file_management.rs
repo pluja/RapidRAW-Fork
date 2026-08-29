@@ -1762,7 +1762,9 @@ pub fn generate_thumbnail_data(
                 .unwrap_or("basic")
         };
         if default_tm == "agx" {
-            if !is_raw {
+            if is_raw {
+                final_image = crate::image_processing::apply_prophoto_to_srgb(final_image);
+            } else {
                 final_image = crate::image_processing::apply_srgb_to_linear(final_image);
             }
             crate::image_processing::apply_cpu_agx_tonemap(&mut final_image);
