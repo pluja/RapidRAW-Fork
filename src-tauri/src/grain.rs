@@ -14,16 +14,12 @@
 /// How much each dye layer's grain differs from the others.
 pub const LAYER_INDEPENDENCE: f32 = 0.30;
 
-/// Finest grain cell worth rendering, in pixels of whatever is being drawn.
-pub const MIN_CELL_PX: f32 = 1.6;
-
-/// Grain at the top of the slider, past any emulsion, and the curve reaching it.
+/// Grain at the top of the slider, past any emulsion.
 pub const MAX_AMPLITUDE: f32 = 0.10;
-pub const RESPONSE: f32 = 1.32;
 
 /// Grain amplitude for a slider position from zero to one hundred.
 pub fn amplitude(slider: f32) -> f32 {
-    (slider / 100.0).clamp(0.0, 1.0).powf(RESPONSE) * MAX_AMPLITUDE
+    (slider / 100.0).clamp(0.0, 1.0) * MAX_AMPLITUDE
 }
 
 fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
@@ -40,10 +36,10 @@ pub fn octave_weight(cell_pixels: f32) -> f32 {
     smoothstep(1.0, 2.5, cell_pixels)
 }
 
-/// Cells per pixel, saturating where grain would be finer than the pixels
-/// carrying it.
+/// Cells per pixel. Grain keeps its size relative to the picture at every
+/// render resolution, which is what makes a preview agree with an export.
 pub fn frequency(grain_size: f32, scale: f32) -> f32 {
-    ((1.0 / grain_size.max(0.1)) / scale).min(1.0 / MIN_CELL_PX)
+    (1.0 / grain_size.max(0.1)) / scale
 }
 
 fn hash(x: f32, y: f32) -> f32 {
@@ -86,13 +82,13 @@ pub fn grain_noise(x: f32, y: f32, roughness: f32, cell_pixels: f32) -> f32 {
     let mid = value_noise(x, y);
     let coarse = value_noise(x * 0.5 + 19.7, y * 0.5 + 4.3);
 
-    let w_fine = (0.55 + (0.20 - 0.55) * roughness) * octave_weight(cell_pixels * 0.5);
-    let w_mid = octave_weight(cell_pixels);
-    let w_coarse = (0.25 + (0.85 - 0.25) * roughness) * octave_weight(cell_pixels * 2.0);
+    let base_fine = 0.55 + (0.20 - 0.55) * roughness;
+    let base_coarse = 0.25 + (0.85 - 0.25) * roughness;
+    let total = (base_fine * base_fine + 1.0 + base_coarse * base_coarse).sqrt();
 
-    let total = (w_fine * w_fine + w_mid * w_mid + w_coarse * w_coarse)
-        .sqrt()
-        .max(1e-4);
+    let w_fine = base_fine * octave_weight(cell_pixels * 0.5);
+    let w_mid = octave_weight(cell_pixels);
+    let w_coarse = base_coarse * octave_weight(cell_pixels * 2.0);
     (fine * w_fine + mid * w_mid + coarse * w_coarse) / total
 }
 
@@ -206,33 +202,34 @@ mod tests {
         }
     }
 
-    /// A cell finer than a pixel is not grain, it is per-pixel noise that looks
-    /// like a different film at every preview size. Something has to render at
-    /// every setting, though, or grain vanishes in the preview and returns on
-    /// export.
+    /// Grain belongs to the picture, not to the buffer it is drawn into, so a
+    /// cell has to cover the same fraction of the frame at every render size.
+    /// Holding a minimum pixel size instead made preview grain several times
+    /// coarser than the export, which read as blocky until the view was zoomed.
     #[test]
-    fn grain_renders_at_every_size_and_scale() {
-        for size in [1.0f32, 10.0, 25.0, 50.0, 100.0] {
+    fn grain_keeps_its_size_relative_to_the_picture() {
+        for size in [10.0f32, 20.0, 50.0, 100.0] {
+            let mut fractions = Vec::new();
             for render_px in [1200.0f32, 1600.0, 2400.0, 6240.0] {
                 let scale = render_px / 1080.0;
-                let cell = 1.0 / frequency(size / 50.0, scale);
+                let cell_px = 1.0 / frequency(size / 50.0, scale);
+                fractions.push(cell_px / render_px);
+            }
+            let first = fractions[0];
+            for f in &fractions {
                 assert!(
-                    cell >= MIN_CELL_PX - 1e-5,
-                    "size {size} at {render_px}px gave a {cell}px cell"
-                );
-
-                let strongest = octave_weight(cell * 2.0);
-                assert!(
-                    strongest > 0.2,
-                    "size {size} at {render_px}px left nothing to render"
+                    (f - first).abs() / first < 1e-4,
+                    "size {size} covered {f} of the frame against {first} elsewhere"
                 );
             }
         }
     }
 
-    /// Fading an octave must not quietly take the amount with it.
+    /// Grain finer than the pixels drawing it averages away, as it does when a
+    /// print is made smaller, so a preview should show less of it rather than a
+    /// coarser version of it.
     #[test]
-    fn amount_holds_as_octaves_fade() {
+    fn grain_quietens_rather_than_coarsens_when_it_cannot_be_resolved() {
         let sample = |cell: f32| {
             let values: Vec<f32> = (0..80)
                 .flat_map(|i| {
@@ -243,10 +240,13 @@ mod tests {
         };
 
         let resolved = sample(8.0);
-        let squeezed = sample(MIN_CELL_PX);
+        let marginal = sample(1.6);
+        let unresolvable = sample(0.4);
+
+        assert!(marginal < resolved, "grain did not quieten as cells shrank");
         assert!(
-            (resolved - squeezed).abs() / resolved < 0.25,
-            "amount fell from {resolved} to {squeezed} once the octaves faded"
+            unresolvable < marginal * 0.6,
+            "sub-pixel grain still carried {unresolvable} against {marginal}"
         );
     }
 

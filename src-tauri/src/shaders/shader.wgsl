@@ -369,18 +369,9 @@ fn hash(p: vec2<f32>) -> f32 {
 /// Kodak's diffuse RMS granularity runs from about four on the finest colour
 /// stock to eleven on the coarsest, under three to one. A slider reaching far
 /// past that spent most of its travel on grain no film has ever produced. The
-/// response is shaped so the coarsest realistic stock lands near seventy,
-/// leaving the rest for going deliberately beyond film.
+/// response is linear across it, so the coarsest realistic stock lands near
+/// seventy and the rest is there for going deliberately beyond film.
 const GRAIN_MAX_AMPLITUDE: f32 = 0.10;
-const GRAIN_RESPONSE: f32 = 1.32;
-
-/// Finest grain cell worth rendering, in pixels of whatever is being drawn.
-///
-/// Grain cannot be finer than the pixels carrying it. Asked for less, the
-/// frequency saturates here rather than folding into per-pixel noise, which
-/// would look like a different film at every preview size and vanish once the
-/// octaves faded out.
-const GRAIN_MIN_CELL_PX: f32 = 1.6;
 
 /// How much each dye layer's grain differs from the others. All the way to one
 /// reads as colour noise rather than grain.
@@ -417,13 +408,22 @@ fn grain_noise(p: vec2<f32>, roughness: f32, cell_pixels: f32) -> f32 {
     let mid = value_noise(p);
     let coarse = value_noise(p * 0.5 + vec2<f32>(19.7, 4.3));
 
-    let w_fine = mix(0.55, 0.20, roughness) * grain_octave_weight(cell_pixels * 0.5);
-    let w_mid = grain_octave_weight(cell_pixels);
-    let w_coarse = mix(0.25, 0.85, roughness) * grain_octave_weight(cell_pixels * 2.0);
+    let base_fine = mix(0.55, 0.20, roughness);
+    let base_coarse = mix(0.25, 0.85, roughness);
 
-    // Normalising by the weights actually used keeps the amount steady as an
-    // octave fades, rather than the grain quietly weakening with resolution.
-    let total = max(sqrt(w_fine * w_fine + w_mid * w_mid + w_coarse * w_coarse), 1e-4);
+    // Normalised against a frame that resolves every octave, so roughness moves
+    // the character without moving the amount.
+    let total = sqrt(base_fine * base_fine + 1.0 + base_coarse * base_coarse);
+
+    // Weighted by what this resolution can carry. Grain finer than the pixels
+    // drawing it averages away, exactly as it does when a print is made
+    // smaller, so a preview shows less of it rather than a coarser version of
+    // it. Holding the size instead made preview grain three times coarser than
+    // the export, which read as blocky until the view was zoomed.
+    let w_fine = base_fine * grain_octave_weight(cell_pixels * 0.5);
+    let w_mid = grain_octave_weight(cell_pixels);
+    let w_coarse = base_coarse * grain_octave_weight(cell_pixels * 2.0);
+
     return (fine * w_fine + mid * w_mid + coarse * w_coarse) / total;
 }
 
@@ -2281,11 +2281,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     if (adjustments.global.grain_amount > 0.0) {
         let coord = vec2<f32>(absolute_coord_i);
         let requested = clamp(adjustments.global.grain_amount * 2.0, 0.0, 1.0);
-        let amount = pow(requested, GRAIN_RESPONSE) * GRAIN_MAX_AMPLITUDE;
-        let grain_frequency = min(
-            (1.0 / max(adjustments.global.grain_size, 0.1)) / scale,
-            1.0 / GRAIN_MIN_CELL_PX
-        );
+        let amount = requested * GRAIN_MAX_AMPLITUDE;
+        let grain_frequency = (1.0 / max(adjustments.global.grain_size, 0.1)) / scale;
         let roughness = adjustments.global.grain_roughness;
         let base_coord = coord * grain_frequency;
 
