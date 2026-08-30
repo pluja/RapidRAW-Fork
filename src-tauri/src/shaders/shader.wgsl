@@ -1172,13 +1172,21 @@ fn apply_sharpen(
     amount: f32,
     threshold: f32,
     masking: f32,
+    mask_preview: f32,
     is_raw: u32
 ) -> SharpenOutput {
-    if (abs(amount) < 0.0005) {
+    // The mask describes where sharpening would be held back, which the edges in
+    // the image decide rather than the amount. The preview therefore has to walk
+    // the neighbourhood even when there is no sharpening to apply, or it returns
+    // the untouched-everywhere mask and draws a white frame.
+    let previewing = mask_preview >= 0.5;
+    let amount_eff = select(amount, max(amount, 0.0), previewing);
+
+    if (abs(amount) < 0.0005 && !previewing) {
         return SharpenOutput(color, 1.0);
     }
 
-    if (amount < 0.0) {
+    if (amount < 0.0 && !previewing) {
         var b1_lin = b1_in;
         if (is_raw == 0u) { b1_lin = input_to_working(b1_in); }
         return SharpenOutput(mix(color, b1_lin, clamp(-amount * 0.5, 0.0, 1.0)), 1.0);
@@ -1200,7 +1208,7 @@ fn apply_sharpen(
     let g1 = smoothstep(t * 0.12, t * 0.55, abs(d1));
 
     let boost = (d0 * 1.20 * g0
-               + d1 * 0.70 * g1) * amount;
+               + d1 * 0.70 * g1) * amount_eff;
 
     let dims = vec2<i32>(textureDimensions(input_texture));
     let max_idx = dims - vec2<i32>(1);
@@ -1254,7 +1262,7 @@ fn apply_sharpen(
         mask = mix(1.0, smoothstep(knee * 0.15, knee, edge), masking);
     }
 
-    let deconv_delta = (acc - center_tap) * clamp(amount * 0.60, 0.0, 1.0);
+    let deconv_delta = (acc - center_tap) * clamp(amount_eff * 0.60, 0.0, 1.0);
 
     var l_new = l + (boost + deconv_delta) * mask;
 
@@ -1272,7 +1280,7 @@ fn apply_sharpen(
         let edge_present = smoothstep(t * 0.5, t * 2.5, sqrt(g2) * 0.25);
         let aa = 0.90 * diagonality * edge_present;
 
-        if (aa > 0.002) {
+        if (aa > 0.002 && amount_eff > 0.0005) {
             let inv_g = inverseSqrt(g2);
             let tang = vec2<f32>(-gy, gx) * inv_g * 1.30;
             let p = vec2<f32>(coords_i) + vec2<f32>(0.5);
@@ -2118,7 +2126,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         locally_contrasted_rgb,
         sharpness_blurred, tonal_blurred,
         absolute_coord_i, t_sharpness, t_sharp_thresh,
-        adjustments.global.sharpen_masking, is_raw
+        adjustments.global.sharpen_masking,
+        adjustments.global.sharpen_mask_preview, is_raw
     );
     locally_contrasted_rgb = sharpened.color;
 
