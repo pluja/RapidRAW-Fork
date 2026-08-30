@@ -13,12 +13,18 @@ pub type Mat3 = [[f32; 3]; 3];
 const SRGB_LUMA: [f32; 3] = [0.2126, 0.7152, 0.0722];
 
 /// ROMM RGB (ISO 22028-2) primaries, D50 adapted.
+///
+/// Digits are the published ones. Trimming them to the shortest f32 that
+/// round-trips, which is what clippy asks for, would leave a constant that no
+/// longer matches the source it is checked against.
+#[allow(clippy::excessive_precision)]
 pub const PROPHOTO_TO_XYZ_D50: Mat3 = [
     [0.7976749, 0.1351917, 0.0313534],
     [0.2880402, 0.7118741, 0.0000857],
     [0.0000000, 0.0000000, 0.8252100],
 ];
 
+#[allow(clippy::excessive_precision)]
 pub const XYZ_D65_TO_SRGB: Mat3 = [
     [3.2404542, -1.5371385, -0.4985314],
     [-0.9692660, 1.8760108, 0.0415560],
@@ -88,16 +94,14 @@ pub fn invert(m: &Mat3) -> Option<Mat3> {
     }
     let inv_det = 1.0 / det;
 
-    let mut out = [[0.0f32; 3]; 3];
-    for i in 0..3 {
-        for j in 0..3 {
+    Some(std::array::from_fn(|i| {
+        std::array::from_fn(|j| {
             let (r0, r1) = ((j + 1) % 3, (j + 2) % 3);
             let (c0, c1) = ((i + 1) % 3, (i + 2) % 3);
             let cofactor = d[r0][c0] * d[r1][c1] - d[r0][c1] * d[r1][c0];
-            out[i][j] = (cofactor * inv_det) as f32;
-        }
-    }
-    Some(out)
+            (cofactor * inv_det) as f32
+        })
+    }))
 }
 
 /// Scales each row to sum to 1, pinning the neutral axis so a white-balanced
@@ -113,6 +117,7 @@ fn normalize_rows(m: Mat3) -> Option<Mat3> {
     let mut out = m;
     for row in out.iter_mut() {
         let sum: f32 = row.iter().sum();
+        #[allow(clippy::neg_cmp_op_on_partial_ord)]
         if !(sum > 1e-6) {
             return None;
         }
@@ -213,15 +218,13 @@ mod tests {
         let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
             - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
             + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
-        let mut out = [[0.0f64; 3]; 3];
-        for i in 0..3 {
-            for j in 0..3 {
+        std::array::from_fn(|i| {
+            std::array::from_fn(|j| {
                 let (r0, r1) = ((j + 1) % 3, (j + 2) % 3);
                 let (c0, c1) = ((i + 1) % 3, (i + 2) % 3);
-                out[i][j] = (m[r0][c0] * m[r1][c1] - m[r0][c1] * m[r1][c0]) / det;
-            }
-        }
-        out
+                (m[r0][c0] * m[r1][c1] - m[r0][c1] * m[r1][c0]) / det
+            })
+        })
     }
 
     /// Derives an RGB-to-XYZ matrix from primary chromaticities and a white
@@ -314,10 +317,10 @@ mod tests {
     fn invert_round_trips() {
         let inv = invert(&PROPHOTO_TO_XYZ_D50).unwrap();
         let identity = multiply(&PROPHOTO_TO_XYZ_D50, &inv);
-        for i in 0..3 {
-            for j in 0..3 {
+        for (i, row) in identity.iter().enumerate() {
+            for (j, value) in row.iter().enumerate() {
                 let expected = if i == j { 1.0 } else { 0.0 };
-                assert!((identity[i][j] - expected).abs() < 1e-5);
+                assert!((value - expected).abs() < 1e-5);
             }
         }
     }
@@ -352,13 +355,12 @@ mod tests {
     fn cam_to_prophoto_is_identity_when_camera_is_prophoto() {
         let xyz2cam = invert(&PROPHOTO_TO_XYZ_D50).unwrap();
         let m = cam_to_prophoto(xyz2cam).unwrap();
-        for i in 0..3 {
-            for j in 0..3 {
+        for (i, row) in m.iter().enumerate() {
+            for (j, value) in row.iter().enumerate() {
                 let expected = if i == j { 1.0 } else { 0.0 };
                 assert!(
-                    (m[i][j] - expected).abs() < 1e-4,
-                    "[{i}][{j}] was {}, expected {expected}",
-                    m[i][j]
+                    (value - expected).abs() < 1e-4,
+                    "[{i}][{j}] was {value}, expected {expected}"
                 );
             }
         }

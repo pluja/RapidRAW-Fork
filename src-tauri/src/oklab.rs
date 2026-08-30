@@ -18,6 +18,11 @@ use crate::color_space::{self, Mat3};
 use std::sync::OnceLock;
 
 /// XYZ (D65) to the cone-like LMS basis Oklab is built on.
+///
+/// Digits are the published ones. Trimming them to the shortest f32 that
+/// round-trips, which is what clippy asks for, would leave a constant that no
+/// longer matches the source it is checked against.
+#[allow(clippy::excessive_precision)]
 const XYZ_D65_TO_LMS: Mat3 = [
     [0.8189330101, 0.3618667424, -0.1288597137],
     [0.0329845436, 0.9293118715, 0.0361456387],
@@ -25,6 +30,7 @@ const XYZ_D65_TO_LMS: Mat3 = [
 ];
 
 /// Non-linear LMS to Oklab.
+#[allow(clippy::excessive_precision)]
 const LMS_TO_OKLAB: Mat3 = [
     [0.2104542553, 0.7936177850, -0.0040720468],
     [1.9779984951, -2.4285922050, 0.4505937099],
@@ -435,12 +441,11 @@ mod tests {
     /// geometry and the softness, so a change to either invalidates them.
     #[test]
     fn shader_band_ceilings_match_the_geometry() {
-        for band in 0..8 {
+        for (band, peak) in SHADER_BAND_PEAKS.iter().enumerate() {
             let computed = band_ceiling(band);
             assert!(
-                (computed - SHADER_BAND_PEAKS[band]).abs() < 1e-4,
-                "band {band} reaches {computed:.5} but the shader divides by {:.5}",
-                SHADER_BAND_PEAKS[band]
+                (computed - peak).abs() < 1e-4,
+                "band {band} reaches {computed:.5} but the shader divides by {peak:.5}"
             );
         }
     }

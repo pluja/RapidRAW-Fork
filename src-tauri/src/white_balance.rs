@@ -105,6 +105,7 @@ pub fn cct_from_xy(x: f32, y: f32) -> f32 {
 ///
 /// Follows the DNG convention of the Planckian locus below 4000 K, where real
 /// light sources are incandescent, and the CIE daylight locus above it.
+#[allow(clippy::excessive_precision)]
 pub fn xy_from_cct(cct: f32) -> (f32, f32) {
     let t = cct.clamp(1000.0, 50000.0);
     let inv = 1.0e3 / t;
@@ -211,13 +212,7 @@ fn blend_camera_matrices(warm: (f32, Mat3), cool: (f32, Mat3), cct: f32) -> Mat3
         ((mired - cool_mired) / span).clamp(0.0, 1.0)
     };
 
-    let mut out = [[0.0f32; 3]; 3];
-    for i in 0..3 {
-        for j in 0..3 {
-            out[i][j] = g * warm.1[i][j] + (1.0 - g) * cool.1[i][j];
-        }
-    }
-    out
+    std::array::from_fn(|i| std::array::from_fn(|j| g * warm.1[i][j] + (1.0 - g) * cool.1[i][j]))
 }
 
 /// Resolves the camera matrix for the illuminant a frame was actually shot
@@ -295,13 +290,12 @@ mod tests {
         let as_shot = xyz_from_xy(0.3127, 0.3290);
         let target = target_white_xyz(cct_from_xy(0.3127, 0.3290), 0.0, 0.0);
         let m = adaptation_matrix(as_shot, target).unwrap();
-        for i in 0..3 {
-            for j in 0..3 {
+        for (i, row) in m.iter().enumerate() {
+            for (j, value) in row.iter().enumerate() {
                 let expected = if i == j { 1.0 } else { 0.0 };
                 assert!(
-                    (m[i][j] - expected).abs() < 2e-3,
-                    "[{i}][{j}] was {} with both sliders at zero",
-                    m[i][j]
+                    (value - expected).abs() < 2e-3,
+                    "[{i}][{j}] was {value} with both sliders at zero"
                 );
             }
         }
