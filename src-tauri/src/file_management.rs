@@ -1753,15 +1753,10 @@ pub fn generate_thumbnail_data(
     };
 
     if adjustments.is_null() {
-        let default_tm = if is_raw {
-            settings.default_raw_tonemapper.as_deref().unwrap_or("agx")
-        } else {
-            settings
-                .default_non_raw_tonemapper
-                .as_deref()
-                .unwrap_or("basic")
-        };
-        if default_tm == "agx" {
+        let tm_override = crate::image_processing::resolve_tonemapper_override(&settings, is_raw);
+        let use_agx = tm_override == Some(1);
+
+        if use_agx {
             if is_raw {
                 final_image = crate::image_processing::apply_prophoto_to_srgb(final_image);
             } else {

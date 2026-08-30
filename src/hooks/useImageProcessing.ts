@@ -432,12 +432,20 @@ export function useImageProcessing(
 
         if (previewOverride) return;
 
-        debouncedSave(selectedImage.path, adjustments);
+        const prev = prevAdjustmentsRef.current;
 
-        const otherPaths = multiSelectedPaths.filter((p) => p !== selectedImage.path);
-        if (appSettings?.copyPasteSettings?.autoSync && otherPaths.length > 0) {
-          const prev = prevAdjustmentsRef.current;
-          if (prev && prev.path === selectedImage.path) {
+        if (!prev || prev.path !== selectedImage.path) {
+          prevAdjustmentsRef.current = { path: selectedImage.path, adjustments };
+          return;
+        }
+
+        const hasAdjustmentsChanged = prev.adjustments !== adjustments;
+
+        if (hasAdjustmentsChanged) {
+          debouncedSave(selectedImage.path, adjustments);
+
+          const otherPaths = multiSelectedPaths.filter((p) => p !== selectedImage.path);
+          if (appSettings?.copyPasteSettings?.autoSync && otherPaths.length > 0) {
             const delta: Partial<Adjustments> = {};
             const includedKeys = appSettings?.copyPasteSettings?.includedAdjustments || COPYABLE_ADJUSTMENT_KEYS;
             for (const key of Object.keys(adjustments) as Array<keyof Adjustments>) {
@@ -454,8 +462,9 @@ export function useImageProcessing(
               });
             }
           }
+
+          prevAdjustmentsRef.current = { path: selectedImage.path, adjustments };
         }
-        prevAdjustmentsRef.current = { path: selectedImage.path, adjustments };
       }, 50);
     }
 

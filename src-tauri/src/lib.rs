@@ -1940,6 +1940,10 @@ pub fn run() {
 
             let app_handle = app.handle().clone();
 
+            if let Ok(cache_dir) = app_handle.path().app_cache_dir() {
+                crate::exif_processing::initialize_cache_dir(cache_dir);
+            }
+
             {
                 let disks_app_handle = app_handle.clone();
                 std::thread::spawn(move || {
