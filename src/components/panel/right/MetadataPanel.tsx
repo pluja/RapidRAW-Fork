@@ -15,6 +15,7 @@ import { useSettingsStore } from '../../../store/useSettingsStore';
 import { useProcessStore } from '../../../store/useProcessStore';
 import { useLibraryActions } from '../../../hooks/useLibraryActions';
 import { expandGroupedPaths } from '../../../utils/imageGrouping';
+import { tDynamic } from '../../../i18n/dynamicKey';
 
 interface CameraSetting {
   format?(value: number): string | number;
@@ -548,7 +549,7 @@ export default function MetadataPanel() {
                           return (
                             <EditableMetadataItem
                               key={field.key}
-                              label={t(`editor.metadata.fields.${field.label}`)}
+                              label={tDynamic(t, `editor.metadata.fields.${field.label}`)}
                               value={displayValue}
                               onSave={(newVal) => {
                                 handleUpdateExif(targetPaths, { [field.key]: newVal });

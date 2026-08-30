@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { List, useListCallbackRef } from 'react-window';
+import { List, useListCallbackRef, type ListProps } from 'react-window';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import debounce from 'lodash.debounce';
 import { useTranslation } from 'react-i18next';
@@ -429,7 +429,7 @@ export default function LibraryGrid(props: any) {
         targetTop += rowsInGroup * rowHeight;
       }
     } else {
-      const index = imageList.findIndex((img) => img.path === activePath);
+      const index = imageList.findIndex((img: { path: string }) => img.path === activePath);
       if (index !== -1) {
         const rowIndex = Math.floor(index / columnCount);
         targetTop = rowIndex * rowHeight;
@@ -570,7 +570,7 @@ export default function LibraryGrid(props: any) {
             rowHeight={getItemSize}
             onScroll={(e: React.UIEvent<HTMLElement>) => handleScroll(e.currentTarget.scrollTop)}
             className="custom-scrollbar"
-            rowComponent={Row}
+            rowComponent={Row as ListProps<Record<string, unknown>>['rowComponent']}
             rowProps={memoizedRowProps}
           />
         </div>

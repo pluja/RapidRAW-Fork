@@ -7,6 +7,7 @@ import Button from '../ui/Button';
 import Switch from '../ui/Switch';
 import Text from '../ui/Text';
 import { TextVariants } from '../../types/typography';
+import { tDynamic } from '../../i18n/dynamicKey';
 
 interface CopyPasteSettingsModalProps {
   isOpen: boolean;
@@ -260,7 +261,7 @@ export default function CopyPasteSettingsModal({ isOpen, onClose, onSave, settin
                       return (
                         <div key={group.label} className="mb-1.5 last:mb-0">
                           <Switch
-                            label={t(group.label)}
+                            label={tDynamic(t, group.label)}
                             checked={isFullyChecked}
                             onChange={(checked) => handleGroupToggle(group.keys, checked)}
                           />

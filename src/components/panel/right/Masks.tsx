@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next';
 import Text from '../../ui/Text';
 import { TextWeights } from '../../../types/typography';
 import i18n from 'i18next';
+import { tDynamic } from '../../../i18n/dynamicKey';
 
 export enum Mask {
   AiDepth = 'ai-depth',
@@ -272,7 +273,7 @@ export function NewMaskDropZone({ isOver, textKey }: { isOver: boolean; textKey:
       transition={{ duration: 0.2, ease: 'easeOut' }}
       className={`p-3 rounded-lg text-center ${isOver ? 'border border-accent/80 bg-bg-tertiary/50' : ''}`}
     >
-      <Text weight={TextWeights.medium}>{t(textKey)}</Text>
+      <Text weight={TextWeights.medium}>{tDynamic(t, textKey)}</Text>
     </motion.div>
   );
 }

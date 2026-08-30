@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
-import { List, useListCallbackRef } from 'react-window';
+import { List, useListCallbackRef, type ListProps } from 'react-window';
 import {
   Loader2,
   Star as StarIcon,
@@ -1243,7 +1243,7 @@ export default function CullingView(props: any) {
             listRef={setListHandle}
             rowCount={imageList.length}
             rowHeight={sidebarWidth - 16}
-            rowComponent={Row}
+            rowComponent={Row as ListProps<Record<string, unknown>>['rowComponent']}
             rowProps={rowProps}
             className="custom-scrollbar"
           />

@@ -22,6 +22,7 @@ import { useSettingsStore } from '../../../store/useSettingsStore';
 import { useUIStore } from '../../../store/useUIStore';
 import { useEditorActions } from '../../../hooks/useEditorActions';
 import { useWaveformControls } from '../../../hooks/useWaveformControls';
+import { tDynamic } from '../../../i18n/dynamicKey';
 
 export default function Controls() {
   const { t } = useTranslation();
@@ -183,7 +184,7 @@ export default function Controls() {
     };
 
     const isPasteAllowed = copiedSectionAdjustments && copiedSectionAdjustments.section === sectionName;
-    const translatedSection = t(`editor.adjustments.sections.${sectionName}`);
+    const translatedSection = tDynamic(t, `editor.adjustments.sections.${sectionName}`);
 
     const pasteLabel = copiedSectionAdjustments
       ? t('editor.adjustments.actions.pasteLabel', { section: translatedSection })
@@ -282,7 +283,7 @@ export default function Controls() {
               effects: EffectsPanel,
             }[sectionName];
 
-            const title = t(`editor.adjustments.sections.${sectionName}`);
+            const title = tDynamic(t, `editor.adjustments.sections.${sectionName}`);
             const sectionVisibility = adjustments.sectionVisibility || INITIAL_ADJUSTMENTS.sectionVisibility;
 
             return (

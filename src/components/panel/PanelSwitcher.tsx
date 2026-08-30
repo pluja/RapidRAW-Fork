@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Panel, PanelRegion } from '../ui/AppProperties';
 import { SwitcherPlacement, useUIStore } from '../../store/useUIStore';
+import { tDynamic } from '../../i18n/dynamicKey';
 
 export const PANEL_ICONS: Record<Panel, LucideIcon> = {
   [Panel.Metadata]: Info,
@@ -82,7 +83,7 @@ function PanelTab({ panel, region, side }: { panel: Panel; region: PanelRegion; 
         isDragging && 'opacity-30',
       )}
       onClick={handleClick}
-      data-tooltip={t(PANEL_TITLES[panel])}
+      data-tooltip={tDynamic(t, PANEL_TITLES[panel])}
       style={{ touchAction: 'none' }}
     >
       {isActive && (

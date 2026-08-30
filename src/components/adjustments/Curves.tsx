@@ -16,6 +16,7 @@ import { useContextMenu } from '../../context/ContextMenuContext';
 import Text from '../ui/Text';
 import Slider from '../ui/Slider';
 import { TextColors, TextVariants, TextWeights } from '../../types/typography';
+import { tDynamic } from '../../i18n/dynamicKey';
 
 let curveClipboard: Array<Coord> | null = null;
 let parametricClipboard: any = null;
@@ -485,7 +486,7 @@ export default function CurveGraph({
 
   const activePoints = isParametricMode
     ? buildParametricPoints(activeParametricSettings)
-    : (localPoints ?? adjustments?.curves?.[activeChannel]);
+    : ((localPoints ?? adjustments?.curves?.[activeChannel] ?? []) as Coord[]);
 
   const { color, data: histogramData } = channelConfig[activeChannel];
 
@@ -805,7 +806,7 @@ export default function CurveGraph({
         <div className="flex items-center gap-1 shrink-0">
           {Object.keys(channelConfig).map((channel: any) => {
             const selected = activeChannel === channel;
-            const channelLabel = t(`adjustments.curves.channels.${channel}`);
+            const channelLabel = tDynamic(t, `adjustments.curves.channels.${channel}`);
             return (
               <button
                 key={channel}
