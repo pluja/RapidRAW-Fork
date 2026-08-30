@@ -524,6 +524,15 @@ pub struct AppSettings {
     pub always_decode_raw_thumbnails: Option<bool>,
     #[serde(default)]
     pub workspace: WorkspaceState,
+    /// One saved layout per view, keyed by workspace id.
+    ///
+    /// Held as free-form JSON on purpose. A typed mirror of the frontend's shape
+    /// is what lost this setting before: `save_settings` deserialises into this
+    /// struct and re-serialises, so a field Rust does not know about is dropped
+    /// on the way through, silently, with the write still reporting success. The
+    /// frontend owns and reconciles the shape, and nothing here reads it.
+    #[serde(default)]
+    pub workspaces: Option<Value>,
 }
 
 impl Default for AppSettings {
@@ -550,6 +559,7 @@ impl Default for AppSettings {
             ai_connector_address: None,
             last_folder_state: None,
             ui_visibility: None,
+            workspaces: None,
             enable_ai_tagging: Some(false),
             tagging_thread_count: Some(3),
             tagging_shortcuts: default_tagging_shortcuts_option(),
@@ -720,4 +730,58 @@ pub fn save_settings(settings: AppSettings, app_handle: AppHandle) -> Result<(),
         .unwrap()
         .set_capacity(cache_size);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The frontend sends its whole settings object as JSON, Tauri deserialises it
+    /// into `AppSettings`, and `save_settings` serialises that struct back out to
+    /// the file. Anything the struct has no field for is dropped in the middle,
+    /// while the write still reports success. That is exactly how the per-view
+    /// workspace layouts were lost: the frontend sent `workspaces`, Rust had only
+    /// `workspace`, and every layout silently went nowhere on every save.
+    ///
+    /// So this asserts the round trip a save actually performs, not a copy of it.
+    #[test]
+    fn a_workspace_layout_survives_the_save_round_trip() {
+        let sent = serde_json::json!({
+            "library": {
+                "leftPanelWidth": 412,
+                "rightPanelWidth": 350,
+                "leftTopHeight": 450,
+                "rightTopHeight": 450,
+                "panelLayout": { "leftTop": ["folderTree", "metadata"], "rightTop": ["adjustments"] },
+                "activePanels": { "leftTop": "folderTree", "rightTop": "adjustments" },
+                "panelSwitcherPlacement": { "leftTop": "bottom" },
+                "uiVisibility": { "filmstrip": true, "leftPanel": true, "rightPanel": false }
+            },
+            "develop": {
+                "rightPanelWidth": 501,
+                "uiVisibility": { "filmstrip": true, "leftPanel": false, "rightPanel": true }
+            },
+            "export": { "activePanels": { "leftTop": "export" } }
+        });
+
+        let incoming = serde_json::json!({ "workspaces": sent.clone() });
+        let parsed: AppSettings =
+            serde_json::from_value(incoming).expect("settings with workspaces should deserialise");
+        let written = serde_json::to_value(&parsed).expect("settings should serialise");
+
+        assert_eq!(
+            written.get("workspaces"),
+            Some(&sent),
+            "workspaces did not survive deserialise then serialise; a save would \
+             write the file without them and still report success"
+        );
+    }
+
+    /// An install that has never seen this build sends no `workspaces` key at all.
+    #[test]
+    fn settings_without_workspaces_still_load() {
+        let parsed: AppSettings = serde_json::from_value(serde_json::json!({}))
+            .expect("an empty settings object should deserialise");
+        assert!(parsed.workspaces.is_none());
+    }
 }
