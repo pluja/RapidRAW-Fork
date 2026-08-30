@@ -1466,6 +1466,19 @@ fn apply_dehaze(color: vec3<f32>, blurred_color_input_space: vec3<f32>, is_raw: 
 const NR_REFERENCE_LUMA: f32 = 0.18;
 const NR_READ_NOISE_FLOOR: f32 = 0.0005;
 
+/// How far apart two colours may be and still be averaged together, at the
+/// lowest and highest colour noise reduction settings.
+///
+/// Chroma is measured as the colour minus its own luminance, and the working
+/// space is wider than the one these figures were set in, so the same colour
+/// sits closer to neutral and reads as a smaller difference. Across all
+/// perturbation directions that shrink runs from 1.14 to 2.37, median 1.40; one
+/// scalar cannot match every direction, and the median is the honest choice.
+/// Left unscaled the filter reached that much further and smoothed across
+/// colour edges it used to keep. color_space.rs asserts the ratio.
+const NR_CHROMA_TOL_LOW: f32 = 0.143;
+const NR_CHROMA_TOL_HIGH: f32 = 0.057;
+
 fn nr_noise_scale(luma: f32) -> f32 {
     return sqrt(max(luma, 0.0) + NR_READ_NOISE_FLOOR)
          / sqrt(NR_REFERENCE_LUMA + NR_READ_NOISE_FLOOR);
@@ -1605,14 +1618,7 @@ fn apply_noise_reduction(
         let luma_tol = mix(0.12, 0.04, c_curve) * noise_scale;
         let luma_n   = -1.0 / max(2.0 * luma_tol * luma_tol, 1e-6);
 
-        // Chroma is measured as the colour minus its own luminance, and the
-        // working space is wider than the one these figures were set in, so the
-        // same colour sits closer to neutral and reads as a smaller difference.
-        // Across all perturbation directions that shrink runs from 1.14 to
-        // 2.37, median 1.40; one scalar cannot match every direction, and the
-        // median is the honest choice. Left unscaled the filter reached that
-        // much further and smoothed across colour edges it used to keep.
-        let chroma_tol = mix(0.143, 0.057, c_curve) * noise_scale;
+        let chroma_tol = mix(NR_CHROMA_TOL_LOW, NR_CHROMA_TOL_HIGH, c_curve) * noise_scale;
         let chroma_n   = -1.0 / max(2.0 * chroma_tol * chroma_tol, 1e-6);
 
         let jh1 = hash(vec2<f32>(coords_i) + vec2<f32>(43.7, 91.1));

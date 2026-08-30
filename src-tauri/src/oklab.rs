@@ -126,6 +126,7 @@ pub fn oklch_hue_degrees_of_srgb(srgb: [f32; 3]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shader_probe;
 
     fn assert_matrix(actual: Mat3, expected: Mat3, tol: f32, what: &str) {
         for r in 0..3 {
@@ -144,32 +145,21 @@ mod tests {
     /// the creative controls touch.
     #[test]
     fn shader_matrices_match() {
-        const SHADER_PP_TO_LMS: Mat3 = [
-            [0.71538717, 0.35280859, -0.06826405],
-            [0.27443418, 0.66782898, 0.05775598],
-            [0.10983816, 0.18630311, 0.70419478],
-        ];
-        const SHADER_LMS_TO_PP: Mat3 = [
-            [1.73857641, -0.98809987, 0.24957718],
-            [-0.70716941, 1.93436372, -0.22720321],
-            [-0.08408777, -0.35763812, 1.44124269],
-        ];
-        const SHADER_OKLAB_TO_LMS: Mat3 = [
-            [1.00000000, 0.39633778, 0.21580376],
-            [1.00000000, -0.10556135, -0.06385417],
-            [1.00000000, -0.08948418, -1.29148555],
-        ];
-        assert_matrix(prophoto_to_lms(), SHADER_PP_TO_LMS, 1e-6, "PP_TO_LMS");
-        assert_matrix(lms_to_prophoto(), SHADER_LMS_TO_PP, 1e-6, "LMS_TO_PP");
-        assert_matrix(oklab_to_lms(), SHADER_OKLAB_TO_LMS, 1e-6, "OKLAB_TO_LMS");
+        for (derived, name) in [
+            (prophoto_to_lms(), "PP_TO_LMS"),
+            (lms_to_prophoto(), "LMS_TO_PP"),
+            (oklab_to_lms(), "OKLAB_TO_LMS"),
+            (lms_to_oklab(), "LMS_TO_OKLAB"),
+        ] {
+            assert_matrix(derived, shader_probe::mat3_const(name), 1e-6, name);
+        }
     }
 
     /// The shader selects bands by these angles; they are the hues of the
     /// colours each band is named for.
     #[test]
     fn shader_band_centres_match_their_colours() {
-        const SHADER_CENTERS: [f32; 8] =
-            [29.23, 67.93, 109.78, 142.51, 194.80, 264.06, 311.99, 328.36];
+        let shader_centers = shader_probe::f32_array_const::<8>("OK_BAND_CENTERS");
         let colours = [
             [1.0, 0.0, 0.0],
             [1.0, 0.35, 0.0],
@@ -183,9 +173,9 @@ mod tests {
         for (i, colour) in colours.iter().enumerate() {
             let hue = oklch_hue_degrees_of_srgb(*colour);
             assert!(
-                (hue - SHADER_CENTERS[i]).abs() < 0.05,
+                (hue - shader_centers[i]).abs() < 0.05,
                 "band {i} centre is {hue} but the shader uses {}",
-                SHADER_CENTERS[i]
+                shader_centers[i]
             );
         }
     }
@@ -194,18 +184,20 @@ mod tests {
     /// meaningful rather than arbitrary.
     #[test]
     fn skin_holds_its_hue_across_tones() {
-        const SHADER_SKIN_HUE: f32 = 55.0;
+        let shader_skin_hue = shader_probe::f32_const("OK_SKIN_HUE_DEG");
         for skin in [[0.85, 0.66, 0.55], [0.62, 0.44, 0.34], [0.33, 0.21, 0.15]] {
             let hue = oklch_hue_degrees_of_srgb(skin);
             assert!(
-                (hue - SHADER_SKIN_HUE).abs() < 3.0,
-                "skin tone {skin:?} sits at {hue}, not near {SHADER_SKIN_HUE}"
+                (hue - shader_skin_hue).abs() < 3.0,
+                "skin tone {skin:?} sits at {hue}, not near {shader_skin_hue}"
             );
         }
     }
 
     const BAND_CENTERS: [f32; 8] = [29.23, 67.93, 109.78, 142.51, 194.80, 264.06, 311.99, 328.36];
-    /// Mirror the band selection constants in shader.wgsl.
+    /// Mirror the band selection constants in shader.wgsl, so the helpers below
+    /// reproduce what the GPU does. Held to the shader by
+    /// `the_band_constants_are_the_shaders_own`.
     const SHADER_BAND_CHROMA_FLOOR: f32 = 0.02;
     const SHADER_BAND_NEIGHBOUR_FLOOR: f32 = 0.012;
     const SHADER_BAND_SOFTNESS: f32 = 0.18;
@@ -216,6 +208,34 @@ mod tests {
     const SHADER_BAND_PEAKS: [f32; 8] = [
         0.68742, 0.59133, 0.54055, 0.59582, 0.85086, 0.78555, 0.43665, 0.45839,
     ];
+
+    #[test]
+    fn the_band_constants_are_the_shaders_own() {
+        for (mirrored, name) in [
+            (SHADER_BAND_CHROMA_FLOOR, "OK_BAND_CHROMA_FLOOR"),
+            (SHADER_BAND_NEIGHBOUR_FLOOR, "OK_BAND_NEIGHBOUR_FLOOR"),
+            (SHADER_BAND_SOFTNESS, "OK_BAND_SOFTNESS"),
+            (SHADER_TRUST_LOW, "OK_BAND_TRUST_LOW"),
+            (SHADER_TRUST_HIGH, "OK_BAND_TRUST_HIGH"),
+            (SHADER_CONFIDENCE_LOW, "OK_BAND_CONFIDENCE_LOW"),
+            (SHADER_CONFIDENCE_HIGH, "OK_BAND_CONFIDENCE_HIGH"),
+        ] {
+            let shader = shader_probe::f32_const(name);
+            assert!(
+                (mirrored - shader).abs() < 1e-9,
+                "{name} is {shader} in the shader, {mirrored} here"
+            );
+        }
+
+        assert_eq!(
+            BAND_CENTERS,
+            shader_probe::f32_array_const::<8>("OK_BAND_CENTERS")
+        );
+        assert_eq!(
+            SHADER_BAND_PEAKS,
+            shader_probe::f32_array_const::<8>("OK_BAND_PEAKS")
+        );
+    }
 
     /// The share a band takes for a colour exactly on its own centre.
     fn band_ceiling(band: usize) -> f32 {

@@ -40,6 +40,8 @@ mod panorama_stitching;
 mod panorama_utils;
 mod preset_converter;
 mod raw_processing;
+#[cfg(test)]
+mod shader_probe;
 mod tagging;
 mod tagging_utils;
 mod white_balance;

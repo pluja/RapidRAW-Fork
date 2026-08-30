@@ -197,6 +197,7 @@ pub fn prophoto_to_srgb_gamut_clipped(c: [f32; 3]) -> [f32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shader_probe;
 
     const ROMM_PRIMARIES: [[f64; 2]; 3] = [[0.7347, 0.2653], [0.1596, 0.8404], [0.0366, 0.0001]];
     const SRGB_PRIMARIES: [[f64; 2]; 3] = [[0.64, 0.33], [0.30, 0.60], [0.15, 0.06]];
@@ -382,10 +383,13 @@ mod tests {
     /// amount or it reaches further than it was set to.
     #[test]
     fn chroma_differences_shrink_by_the_factor_the_shader_divides_by() {
-        const SHADER_CHROMA_TOL: (f32, f32) = (0.143, 0.057);
+        let shader_chroma_tol = (
+            shader_probe::f32_const("NR_CHROMA_TOL_LOW"),
+            shader_probe::f32_const("NR_CHROMA_TOL_HIGH"),
+        );
         const ORIGINAL_CHROMA_TOL: (f32, f32) = (0.20, 0.08);
-        const PROPHOTO_LUMA_W: [f32; 3] = [0.2880402, 0.7118741, 0.0000857];
-        const SRGB_LUMA_W: [f32; 3] = [0.2126, 0.7152, 0.0722];
+        let prophoto_luma_w = shader_probe::vec3_const("LUMA_COEFF");
+        let srgb_luma_w = shader_probe::vec3_const("SRGB_LUMA");
 
         fn chroma(c: [f32; 3], w: [f32; 3]) -> f32 {
             let y = c[0] * w[0] + c[1] * w[1] + c[2] * w[2];
@@ -400,9 +404,9 @@ mod tests {
                 let mut direction = [0.0f32; 3];
                 direction[axis] = angle.cos();
                 direction[(axis + 1) % 3] = angle.sin();
-                let wide = chroma(apply(&srgb_to_prophoto, direction), PROPHOTO_LUMA_W);
+                let wide = chroma(apply(&srgb_to_prophoto, direction), prophoto_luma_w);
                 if wide > 1e-6 {
-                    ratios.push(chroma(direction, SRGB_LUMA_W) / wide);
+                    ratios.push(chroma(direction, srgb_luma_w) / wide);
                 }
             }
         }
@@ -414,8 +418,8 @@ mod tests {
             "chroma shrank by {median}, not the 1.40 the tolerances assume"
         );
         for (scaled, original) in [
-            (SHADER_CHROMA_TOL.0, ORIGINAL_CHROMA_TOL.0),
-            (SHADER_CHROMA_TOL.1, ORIGINAL_CHROMA_TOL.1),
+            (shader_chroma_tol.0, ORIGINAL_CHROMA_TOL.0),
+            (shader_chroma_tol.1, ORIGINAL_CHROMA_TOL.1),
         ] {
             let expected = original / median;
             assert!(
@@ -429,8 +433,8 @@ mod tests {
     /// white to one, so the tolerances measured against it were left alone.
     #[test]
     fn luminance_differences_do_not_shrink() {
-        const PROPHOTO_LUMA_W: [f32; 3] = [0.2880402, 0.7118741, 0.0000857];
-        const SRGB_LUMA_W: [f32; 3] = [0.2126, 0.7152, 0.0722];
+        let prophoto_luma_w = shader_probe::vec3_const("LUMA_COEFF");
+        let srgb_luma_w = shader_probe::vec3_const("SRGB_LUMA");
         fn luma(c: [f32; 3], w: [f32; 3]) -> f32 {
             c[0] * w[0] + c[1] * w[1] + c[2] * w[2]
         }
@@ -443,8 +447,8 @@ mod tests {
                 let mut direction = [0.0f32; 3];
                 direction[axis] = angle.cos();
                 direction[(axis + 1) % 3] = angle.sin();
-                let wide = luma(apply(&srgb_to_prophoto, direction), PROPHOTO_LUMA_W).abs();
-                let narrow = luma(direction, SRGB_LUMA_W).abs();
+                let wide = luma(apply(&srgb_to_prophoto, direction), prophoto_luma_w).abs();
+                let narrow = luma(direction, srgb_luma_w).abs();
                 if wide > 1e-4 && narrow > 1e-4 {
                     ratios.push(narrow / wide);
                 }
@@ -463,11 +467,11 @@ mod tests {
     /// into the hundreds, which is a division artefact rather than detail.
     #[test]
     fn clarity_gain_is_bounded_without_touching_real_detail() {
-        const SHADER_DETAIL_STOPS: f32 = 2.0;
+        let shader_detail_stops = shader_probe::f32_const("CLARITY_DETAIL_STOPS");
         let gain = |centre: f32, blurred: f32, amount: f32| {
             let log_ratio = (centre / blurred)
                 .log2()
-                .clamp(-SHADER_DETAIL_STOPS, SHADER_DETAIL_STOPS);
+                .clamp(-shader_detail_stops, shader_detail_stops);
             (log_ratio * amount).exp2()
         };
 
@@ -493,19 +497,21 @@ mod tests {
     /// threshold means something different at every brightness.
     #[test]
     fn noise_thresholds_follow_the_brightness_they_are_measured_against() {
-        const SHADER_REFERENCE_LUMA: f32 = 0.18;
-        const SHADER_READ_NOISE_FLOOR: f32 = 0.0005;
+        let shader_reference_luma = shader_probe::f32_const("NR_REFERENCE_LUMA");
+        let shader_read_noise_floor = shader_probe::f32_const("NR_READ_NOISE_FLOOR");
 
         let scale = |luma: f32| {
-            (luma.max(0.0) + SHADER_READ_NOISE_FLOOR).sqrt()
-                / (SHADER_REFERENCE_LUMA + SHADER_READ_NOISE_FLOOR).sqrt()
+            (luma.max(0.0) + shader_read_noise_floor).sqrt()
+                / (shader_reference_luma + shader_read_noise_floor).sqrt()
         };
 
-        // Mid grey is the anchor, so a setting tuned there is unchanged.
+        // The anchor has to be mid grey itself. Reading it from the shader and
+        // then checking scale() returns 1.0 there proves nothing, because it
+        // does so for whatever value it is given; the claim worth making is
+        // that the shader anchors on the 18% grey the sliders were tuned at.
         assert!(
-            (scale(SHADER_REFERENCE_LUMA) - 1.0).abs() < 1e-6,
-            "mid grey should be the anchor, got {}",
-            scale(SHADER_REFERENCE_LUMA)
+            (shader_reference_luma - 0.18).abs() < 1e-6,
+            "the shader anchors noise reduction at {shader_reference_luma}, not mid grey"
         );
 
         // A flat threshold was two and a half times a deep shadow's own value.
@@ -537,28 +543,30 @@ mod tests {
         }
     }
 
+    /// The shader carries these rows as literals, and dots each against the
+    /// colour rather than building a mat3x3, so they are read as vectors.
     #[test]
     fn shader_constants_match_this_module() {
-        const SHADER_PROPHOTO_TO_SRGB: Mat3 = [
-            [2.0340760, -0.7273341, -0.3067416],
-            [-0.2288132, 1.2317301, -0.0029170],
-            [-0.0085698, -0.1532867, 1.1618567],
+        let shader_prophoto_to_srgb: Mat3 = [
+            shader_probe::vec3_const("PROPHOTO_TO_SRGB_R0"),
+            shader_probe::vec3_const("PROPHOTO_TO_SRGB_R1"),
+            shader_probe::vec3_const("PROPHOTO_TO_SRGB_R2"),
         ];
-        const SHADER_SRGB_TO_PROPHOTO: Mat3 = [
-            [0.5293459, 0.3300728, 0.1405812],
-            [0.0983743, 0.8734611, 0.0281647],
-            [0.0168832, 0.1176725, 0.8654441],
+        let shader_srgb_to_prophoto: Mat3 = [
+            shader_probe::vec3_const("SRGB_TO_PROPHOTO_R0"),
+            shader_probe::vec3_const("SRGB_TO_PROPHOTO_R1"),
+            shader_probe::vec3_const("SRGB_TO_PROPHOTO_R2"),
         ];
-        const SHADER_LUMA: [f32; 3] = [0.2880402, 0.7118741, 0.0000857];
+        let shader_luma = shader_probe::vec3_const("LUMA_COEFF");
 
         let pp2s = prophoto_to_srgb();
         for r in 0..3 {
             for c in 0..3 {
                 assert!(
-                    (pp2s[r][c] - SHADER_PROPHOTO_TO_SRGB[r][c]).abs() < 1e-6,
+                    (pp2s[r][c] - shader_prophoto_to_srgb[r][c]).abs() < 1e-6,
                     "PROPHOTO_TO_SRGB[{r}][{c}]: module {} vs shader {}",
                     pp2s[r][c],
-                    SHADER_PROPHOTO_TO_SRGB[r][c]
+                    shader_prophoto_to_srgb[r][c]
                 );
             }
         }
@@ -566,16 +574,34 @@ mod tests {
         for r in 0..3 {
             for c in 0..3 {
                 assert!(
-                    (s2pp[r][c] - SHADER_SRGB_TO_PROPHOTO[r][c]).abs() < 1e-6,
+                    (s2pp[r][c] - shader_srgb_to_prophoto[r][c]).abs() < 1e-6,
                     "SRGB_TO_PROPHOTO[{r}][{c}]: module {} vs shader {}",
                     s2pp[r][c],
-                    SHADER_SRGB_TO_PROPHOTO[r][c]
+                    shader_srgb_to_prophoto[r][c]
                 );
             }
         }
         for c in 0..3 {
-            assert!((PROPHOTO_LUMA[c] - SHADER_LUMA[c]).abs() < 1e-7);
+            assert!((PROPHOTO_LUMA[c] - shader_luma[c]).abs() < 1e-7);
         }
+    }
+
+    /// SRGB_LUMA and BRADFORD are carried by both this module and the shader,
+    /// with no derivation tying the two together.
+    #[test]
+    fn shader_carries_the_same_luma_weights_and_cone_response() {
+        assert_close(
+            SRGB_LUMA,
+            shader_probe::vec3_const("SRGB_LUMA"),
+            1e-7,
+            "SRGB_LUMA",
+        );
+        assert_matrix_close(
+            BRADFORD,
+            shader_probe::mat3_const("BRADFORD").map(|row| row.map(f64::from)),
+            1e-7,
+            "BRADFORD",
+        );
     }
 
     #[test]

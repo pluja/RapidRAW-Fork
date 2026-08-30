@@ -255,6 +255,7 @@ pub fn interpolate_camera_matrix(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shader_probe;
 
     fn assert_near(a: f32, b: f32, tol: f32, what: &str) {
         assert!((a - b).abs() < tol, "{what}: {a} vs {b} (tol {tol})");
@@ -388,6 +389,9 @@ mod tests {
         );
     }
 
+    /// The cone response the shader carries as BRADFORD, and which
+    /// color_space keeps privately. Held to the shader by
+    /// `shader_cone_matrices_match`.
     const BRADFORD: Mat3 = [
         [0.8951, 0.2664, -0.1614],
         [-0.7502, 1.7135, 0.0367],
@@ -397,27 +401,6 @@ mod tests {
     /// Reproduces exactly what apply_white_balance does in shader.wgsl, so the
     /// two implementations cannot drift apart unnoticed. Takes slider units and
     /// scales them the way the adjustment plumbing does.
-    /// Reads a `const NAME: f32 = VALUE;` out of the shader source itself.
-    ///
-    /// Constants asserted against another Rust literal prove nothing about what
-    /// runs on the GPU: the shader is the live path, and a mirror that has
-    /// drifted from it passes every such test. These read the shader.
-    fn shader_f32_const(name: &str) -> f32 {
-        let needle = format!("const {name}: f32 =");
-        let line = shader_source()
-            .lines()
-            .find(|l| l.trim_start().starts_with(&needle))
-            .unwrap_or_else(|| panic!("shaders/shader.wgsl has no `const {name}: f32`"));
-        line.rsplit('=')
-            .next()
-            .and_then(|rhs| rhs.trim().trim_end_matches(';').parse::<f32>().ok())
-            .unwrap_or_else(|| panic!("could not read a value for {name} from {line:?}"))
-    }
-
-    fn shader_source() -> &'static str {
-        include_str!("shaders/shader.wgsl")
-    }
-
     fn shader_white_balance(color: [f32; 3], slider_temp: f32, slider_tint: f32) -> [f32; 3] {
         let temp = slider_temp / TEMPERATURE_SCALE;
         let tint = slider_tint / TINT_SCALE;
@@ -452,7 +435,7 @@ mod tests {
 
     #[test]
     fn the_shader_carries_the_gamut_floor_this_module_was_tuned_against() {
-        let shader = shader_f32_const("WB_TARGET_MIN_Z");
+        let shader = shader_probe::f32_const("WB_TARGET_MIN_Z");
         assert!(
             (shader - TARGET_MIN_Z).abs() < 1e-9,
             "shader WB_TARGET_MIN_Z is {shader}, this module uses {TARGET_MIN_Z}"
@@ -466,7 +449,7 @@ mod tests {
             ("WB_MIREDS_PER_STEP", MIREDS_PER_STEP * TEMPERATURE_SCALE),
             ("WB_TINT_V_PER_STEP", TINT_V_PER_STEP * TINT_SCALE),
         ] {
-            let shader = shader_f32_const(name);
+            let shader = shader_probe::f32_const(name);
             assert!(
                 (shader - expected).abs() <= expected.abs() * 1e-6,
                 "shader {name} is {shader}, this module implies {expected}"
@@ -476,12 +459,7 @@ mod tests {
 
     #[test]
     fn the_shader_applies_the_clamp_rather_than_merely_defining_it() {
-        let src = shader_source();
-        let body = src
-            .split("fn apply_white_balance")
-            .nth(1)
-            .expect("shader has no apply_white_balance");
-        let body = &body[..body.find("\n}").unwrap_or(body.len())];
+        let body = shader_probe::fn_body("apply_white_balance");
         assert!(
             body.contains("wb_clamp_target_to_gamut"),
             "apply_white_balance does not call wb_clamp_target_to_gamut, so the \
@@ -616,20 +594,23 @@ mod tests {
     /// The shader carries these as literals; drift would change every image.
     #[test]
     fn shader_cone_matrices_match() {
-        const SHADER_PP_TO_CONE: Mat3 = [
-            [0.7907327, 0.3106534, -0.1051016],
-            [-0.1048588, 1.1183755, 0.0069107],
-            [0.0112988, -0.0435044, 0.8508500],
-        ];
-        let computed = color_space::multiply(&BRADFORD, &color_space::PROPHOTO_TO_XYZ_D50);
-        for r in 0..3 {
-            for c in 0..3 {
-                assert!(
-                    (computed[r][c] - SHADER_PP_TO_CONE[r][c]).abs() < 1e-6,
-                    "PP_TO_CONE[{r}][{c}]: {} vs shader {}",
-                    computed[r][c],
-                    SHADER_PP_TO_CONE[r][c]
-                );
+        let pp_to_cone = color_space::multiply(&BRADFORD, &color_space::PROPHOTO_TO_XYZ_D50);
+        let cone_to_pp = color_space::invert(&pp_to_cone).unwrap();
+        for (derived, name) in [
+            (BRADFORD, "BRADFORD"),
+            (pp_to_cone, "PP_TO_CONE"),
+            (cone_to_pp, "CONE_TO_PP"),
+        ] {
+            let shader = shader_probe::mat3_const(name);
+            for r in 0..3 {
+                for c in 0..3 {
+                    assert!(
+                        (derived[r][c] - shader[r][c]).abs() < 1e-6,
+                        "{name}[{r}][{c}]: {} vs shader {}",
+                        derived[r][c],
+                        shader[r][c]
+                    );
+                }
             }
         }
     }

@@ -111,6 +111,7 @@ pub fn spread(density: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shader_probe;
 
     /// The property the model exists for: what you see while editing has to be
     /// what lands in the file. A preview is a smaller print of the same frame,
@@ -155,32 +156,31 @@ mod tests {
     /// shader source.
     #[test]
     fn the_shader_fades_octaves_the_way_this_module_measured() {
-        const SRC: &str = include_str!("shaders/shader.wgsl");
-
-        let needle = "const GRAIN_OCTAVE_FALLOFF: f32 =";
-        let line = SRC
-            .lines()
-            .find(|l| l.trim_start().starts_with(needle))
-            .expect("shader has no GRAIN_OCTAVE_FALLOFF");
-        let shader: f32 = line
-            .rsplit('=')
-            .next()
-            .and_then(|rhs| rhs.trim().trim_end_matches(';').parse().ok())
-            .unwrap_or_else(|| panic!("could not read GRAIN_OCTAVE_FALLOFF from {line:?}"));
+        let shader = shader_probe::f32_const("GRAIN_OCTAVE_FALLOFF");
         assert!(
             (shader - OCTAVE_FALLOFF).abs() < 1e-9,
             "shader fades octaves at {shader}, this module measured {OCTAVE_FALLOFF}"
         );
 
-        let body = SRC
-            .split("fn grain_octave_weight")
-            .nth(1)
-            .expect("shader has no grain_octave_weight");
-        let body = &body[..body.find("\n}").unwrap_or(body.len())];
+        let body = shader_probe::fn_body("grain_octave_weight");
         assert!(
             body.contains("GRAIN_OCTAVE_FALLOFF") && !body.contains("smoothstep"),
             "grain_octave_weight is not the measured falloff: {body:?}"
         );
+    }
+
+    #[test]
+    fn the_shader_grains_at_the_amplitude_this_module_reasons_about() {
+        for (mirrored, name) in [
+            (MAX_AMPLITUDE, "GRAIN_MAX_AMPLITUDE"),
+            (LAYER_INDEPENDENCE, "GRAIN_LAYER_INDEPENDENCE"),
+        ] {
+            let shader = shader_probe::f32_const(name);
+            assert!(
+                (mirrored - shader).abs() < 1e-9,
+                "{name} is {shader} in the shader, {mirrored} here"
+            );
+        }
     }
 
     #[test]
