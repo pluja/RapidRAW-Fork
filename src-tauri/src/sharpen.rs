@@ -12,8 +12,18 @@
 #![allow(dead_code)]
 
 /// Edge strength either side of which sharpening is held back, at full masking.
+///
+/// These were chosen by eye against a gradient measured in pixels, which means
+/// they are calibrated at the render size where `scale` is one: the shader's
+/// REFERENCE_DIMENSION of 1080 on the short side. A frame that size renders
+/// exactly as it did before the gradient was normalised; larger ones now agree
+/// with it instead of protecting more the bigger they get.
 pub const MASK_KNEE_LOW: f32 = 0.02;
 pub const MASK_KNEE_HIGH: f32 = 0.34;
+
+/// Short side at which `scale` is one, and so the size the knees above mean
+/// what they were set to mean.
+pub const REFERENCE_SHORT_SIDE: f32 = 1080.0;
 
 /// Weights across the five-tap window, which taper so that the gradient does
 /// not crawl with sensor noise the way a three by three would.
@@ -80,7 +90,7 @@ mod tests {
     }
 
     fn scale_of(short_side_px: f32) -> f32 {
-        (short_side_px / 1080.0).max(0.1)
+        (short_side_px / REFERENCE_SHORT_SIDE).max(0.1)
     }
 
     fn edge_at_centre(width_px: f32, edge_width_fraction: f32) -> f32 {
@@ -163,6 +173,31 @@ mod tests {
                 "{name} is {shader} in the shader, {mirrored} here"
             );
         }
+    }
+
+    /// The knees mean what they were set to mean only at the size where scale
+    /// is one, so moving the shader's reference would silently recalibrate the
+    /// Masking slider.
+    #[test]
+    fn the_reference_size_the_knees_are_anchored_at_is_the_shaders_own() {
+        let shader = shader_probe::f32_const("REFERENCE_DIMENSION");
+        assert!(
+            (shader - REFERENCE_SHORT_SIDE).abs() < 1e-9,
+            "the shader scales against {shader}, the knees were set against {REFERENCE_SHORT_SIDE}"
+        );
+    }
+
+    /// A frame at the reference size has to render exactly as it did before the
+    /// gradient was normalised, or the change was a recalibration rather than a
+    /// fix.
+    #[test]
+    fn the_reference_size_is_unchanged_by_the_normalisation() {
+        let field = ramp(REFERENCE_SHORT_SIDE, 0.02);
+        let centre = REFERENCE_SHORT_SIDE * 0.5;
+        let sample = |ox: i32, _oy: i32| field(centre + ox as f32);
+        let normalised = edge_strength(sample, scale_of(REFERENCE_SHORT_SIDE));
+        let unnormalised = edge_strength(sample, 1.0);
+        assert!((normalised - unnormalised).abs() < 1e-6);
     }
 
     /// The constant is only worth pinning if the shader applies it, and it is
