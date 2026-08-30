@@ -459,10 +459,8 @@ fn process_preview_job(
         None
     };
 
-    let mask_definitions: Vec<MaskDefinition> = adjustments_clone
-        .get("masks")
-        .and_then(|m| serde_json::from_value(m.clone()).ok())
-        .unwrap_or_default();
+    let mask_definitions: Vec<MaskDefinition> =
+        mask_generation::parse_mask_definitions(&adjustments_clone);
 
     let scaled_crop_offset = (
         unscaled_crop_offset.0 * effective_scale,
@@ -802,10 +800,8 @@ fn generate_uncropped_preview(
 
         let (preview_width, preview_height) = processing_base.dimensions();
 
-        let mask_definitions: Vec<MaskDefinition> = adjustments_clone
-            .get("masks")
-            .and_then(|m| serde_json::from_value(m.clone()).ok())
-            .unwrap_or_default();
+        let mask_definitions: Vec<MaskDefinition> =
+            mask_generation::parse_mask_definitions(&adjustments_clone);
 
         let mask_bitmaps: Vec<ImageBuffer<Luma<u8>, Vec<u8>>> = mask_definitions
             .iter()
@@ -1098,10 +1094,8 @@ fn generate_preset_preview(
 
     let (img_w, img_h) = preview_image.dimensions();
 
-    let mask_definitions: Vec<MaskDefinition> = js_adjustments
-        .get("masks")
-        .and_then(|m| serde_json::from_value(m.clone()).ok())
-        .unwrap_or_default();
+    let mask_definitions: Vec<MaskDefinition> =
+        mask_generation::parse_mask_definitions(&js_adjustments);
 
     let scaled_crop_offset = (
         unscaled_crop_offset.0 * scale_for_gpu,
@@ -1243,10 +1237,8 @@ async fn generate_all_community_previews(
                 crate::apply_all_transformations(Cow::Borrowed(base_image), &scaled_adjustments);
             let (img_w, img_h) = transformed_image.dimensions();
 
-            let mask_definitions: Vec<MaskDefinition> = scaled_adjustments
-                .get("masks")
-                .and_then(|m| serde_json::from_value(m.clone()).ok())
-                .unwrap_or_else(Vec::new);
+            let mask_definitions: Vec<MaskDefinition> =
+                mask_generation::parse_mask_definitions(&scaled_adjustments);
 
             let unscaled_crop_offset = js_adjustments
                 .get("crop")
@@ -1534,10 +1526,8 @@ async fn generate_preview_for_path(
         let (transformed_image, unscaled_crop_offset) =
             apply_all_transformations(Cow::Borrowed(&base_image), &js_adjustments);
         let (img_w, img_h) = transformed_image.dimensions();
-        let mask_definitions: Vec<MaskDefinition> = js_adjustments
-            .get("masks")
-            .and_then(|m| serde_json::from_value(m.clone()).ok())
-            .unwrap_or_default();
+        let mask_definitions: Vec<MaskDefinition> =
+            mask_generation::parse_mask_definitions(&js_adjustments);
 
         let warped_image =
             resolve_warped_image_for_masks(&state, &js_adjustments, &mask_definitions);
