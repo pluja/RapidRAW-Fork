@@ -624,11 +624,16 @@ export default function MasksPanel() {
     showContextMenu(rect.left, rect.bottom + 5, options);
   };
 
-  const updateContainer = (id: string, data: any) =>
-    setAdjustments((prev: Adjustments) => ({
-      ...prev,
-      masks: prev.masks.map((m) => (m.id === id ? { ...m, ...data } : m)),
-    }));
+  // Memoised so setMaskContainerAdjustments below can hold a stable identity;
+  // panels run effects keyed on that identity.
+  const updateContainer = useCallback(
+    (id: string, data: any) =>
+      setAdjustments((prev: Adjustments) => ({
+        ...prev,
+        masks: prev.masks.map((m) => (m.id === id ? { ...m, ...data } : m)),
+      })),
+    [setAdjustments],
+  );
   const updateSubMask = (id: string, data: any) =>
     setAdjustments((prev: Adjustments) => ({
       ...prev,
@@ -1999,12 +2004,22 @@ function SettingsPanel({
     activeSubMask && [Mask.AiSubject, Mask.AiForeground, Mask.AiSky, Mask.AiDepth].includes(activeSubMask.type);
   const isComponentMode = !!activeSubMask;
 
-  const setMaskContainerAdjustments = (updater: any) => {
-    if (!isActive) return;
-    const currentAdjustments = container.adjustments;
-    const newAdjustments = typeof updater === 'function' ? updater(currentAdjustments) : updater;
-    updateContainer(container.id, { adjustments: newAdjustments });
-  };
+  // Memoised, and silent when nothing changed. Panels take this as their
+  // setAdjustments and some of them run effects that depend on its identity; an
+  // inline function plus an unconditional write meant every such effect
+  // allocated a new container, re-rendered, got a new identity and ran again,
+  // spinning for as long as a mask was selected. Undo and autosave are both
+  // debounced, so neither ever settled either.
+  const setMaskContainerAdjustments = useCallback(
+    (updater: any) => {
+      if (!isActive) return;
+      const currentAdjustments = container.adjustments;
+      const newAdjustments = typeof updater === 'function' ? updater(currentAdjustments) : updater;
+      if (newAdjustments === currentAdjustments) return;
+      updateContainer(container.id, { adjustments: newAdjustments });
+    },
+    [isActive, container.id, container.adjustments, updateContainer],
+  );
 
   const handleToggleSection = (section: string) => {
     setCollapsibleState((prev: any) => {

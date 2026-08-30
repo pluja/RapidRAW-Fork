@@ -32,7 +32,7 @@ export default function DetailsPanel({
 
   useEffect(() => {
     setAdjustments((prev: Adjustments) =>
-      prev.sharpenMaskPreview === isMaskingDrag ? prev : { ...prev, sharpenMaskPreview: isMaskingDrag },
+      (prev.sharpenMaskPreview ?? false) === isMaskingDrag ? prev : { ...prev, sharpenMaskPreview: isMaskingDrag },
     );
   }, [isMaskingDrag, setAdjustments]);
   const { t } = useTranslation();

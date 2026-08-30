@@ -469,7 +469,7 @@ export default function ColorPanel({
   useEffect(
     () => () => {
       setAdjustments((prev: Adjustments) =>
-        prev.colorMixerPreview === -1 ? prev : { ...prev, colorMixerPreview: -1 },
+        (prev.colorMixerPreview ?? -1) === -1 ? prev : { ...prev, colorMixerPreview: -1 },
       );
     },
     [setAdjustments],
