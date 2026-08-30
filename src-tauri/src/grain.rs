@@ -122,7 +122,8 @@ mod tests {
         let mut sum_sq = 0.0f64;
         for y in 0..height {
             for x in 0..width {
-                let v = grain_noise(x as f32 * freq, y as f32 * freq, roughness, cell_pixels) as f64;
+                let v =
+                    grain_noise(x as f32 * freq, y as f32 * freq, roughness, cell_pixels) as f64;
                 sum += v;
                 sum_sq += v * v;
             }
@@ -131,7 +132,14 @@ mod tests {
         ((sum_sq / n) - (sum / n) * (sum / n)).max(0.0).sqrt() as f32
     }
 
-    fn downsampled_sd(width: usize, height: usize, freq: f32, cell_pixels: f32, roughness: f32, factor: usize) -> f32 {
+    fn downsampled_sd(
+        width: usize,
+        height: usize,
+        freq: f32,
+        cell_pixels: f32,
+        roughness: f32,
+        factor: usize,
+    ) -> f32 {
         let (dw, dh) = (width / factor, height / factor);
         let mut vals = Vec::with_capacity(dw * dh);
         for by in 0..dh {
@@ -140,7 +148,9 @@ mod tests {
                 for y in 0..factor {
                     for x in 0..factor {
                         let (px, py) = (bx * factor + x, by * factor + y);
-                        acc += grain_noise(px as f32 * freq, py as f32 * freq, roughness, cell_pixels) as f64;
+                        acc +=
+                            grain_noise(px as f32 * freq, py as f32 * freq, roughness, cell_pixels)
+                                as f64;
                     }
                 }
                 vals.push(acc / (factor * factor) as f64);
@@ -200,7 +210,13 @@ mod tests {
                 let preview_scale = export_scale / FACTOR as f32;
                 let preview_freq = frequency(grain_size, preview_scale);
                 let preview_cell = grain_size * preview_scale;
-                let preview = field_sd(ew / FACTOR, eh / FACTOR, preview_freq, preview_cell, roughness);
+                let preview = field_sd(
+                    ew / FACTOR,
+                    eh / FACTOR,
+                    preview_freq,
+                    preview_cell,
+                    roughness,
+                );
 
                 let ratio = preview / shrunk.max(1e-6);
                 assert!(
@@ -229,7 +245,6 @@ mod tests {
             );
         }
     }
-
 
     fn stdev(values: &[f32]) -> f32 {
         let mean = values.iter().sum::<f32>() / values.len() as f32;

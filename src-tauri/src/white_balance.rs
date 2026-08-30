@@ -177,10 +177,8 @@ pub fn target_white_xyz(as_shot_cct: f32, temperature: f32, tint: f32) -> [f32; 
     let (u, v) = uv_from_xy(x, y);
     // Green lies at higher v, and the target illuminant is divided out, so a
     // greener target is what leaves the image magenta.
-    let (tx, ty) = clamp_target_to_gamut(
-        xy_from_uv(u, v),
-        xy_from_uv(u, v + tint * TINT_V_PER_STEP),
-    );
+    let (tx, ty) =
+        clamp_target_to_gamut(xy_from_uv(u, v), xy_from_uv(u, v + tint * TINT_V_PER_STEP));
     xyz_from_xy(tx, ty)
 }
 
