@@ -35,7 +35,52 @@ A few other things work better because of that:
 - **Disable subsections.** Instead of disabling a whole section (Color), you can disable just one part of it (Color > White Balance) to compare what it's doing.
 - **Grain.** The old one laid the same noise over the whole frame, which reads as digital. This one places grains as particles, so it peaks in the midtones and fades out towards black and white, the way film does. It also keeps its size when you zoom instead of getting coarser.
 - **Library, Develop and Export are separate views.** Tabs at the top switch between them and each keeps its own panels, widths and collapsed sides. Culling no longer means staring at edit sliders you aren't using, which matters on a laptop screen. Ctrl+Alt+1, 2 and 3 switch without the mouse.
-- Sliders and curve points are less sensitive (the movement is smoother and it's easier to be precise), and the panels take less room.
+- **Sliders follow the pointer**, the way Lightroom and Capture One do, so one track width covers the whole range and the ends are always one drag away. Drag the number instead of the track for fine work, or hold Shift on either. Curve points are steadier too, and the panels take less room.
+
+## What it looks like
+
+### Workspaces
+
+Library, Develop and Export are separate views. Tabs in the title bar switch between them, and each one remembers its own panels, widths and collapsed sides.
+
+<p align="center"><img src=".github/assets/workspaces.jpg" alt="Library, Develop and Export tabs in the title bar" width="900"></p>
+
+### Library
+
+Culling gets the screen. The adjustment panel folds away, because you are not editing yet.
+
+<p align="center"><img src=".github/assets/library.jpg" alt="Library view with the adjustment panel collapsed" width="900"></p>
+
+### Develop
+
+The reverse: folders collapse, adjustments open, filmstrip along the bottom.
+
+<p align="center"><img src=".github/assets/develop.jpg" alt="Develop view with adjustments on the right and the filmstrip below" width="900"></p>
+
+### Seeing which colors you are moving
+
+The button at the top right of the Color Mixer greys out everything the chosen band leaves alone, so you can tell what a slider is about to touch before you touch it.
+
+<p align="center"><img src=".github/assets/color-mixer-mask.jpg" alt="Color mixer greying out everything the orange band does not affect" width="900"></p>
+
+### Seeing where sharpening lands
+
+Drag Masking and the photo turns into the mask. White gets sharpened, black is left alone, which is how you keep skies and skin smooth.
+
+<p align="center"><img src=".github/assets/sharpening-mask.jpg" alt="Sharpening masking drawn as a black and white mask over the photo" width="900"></p>
+
+### Panels that take less room
+
+<table>
+<tr>
+<td width="50%"><b>Sliders on one row.</b> Label, track and value share a line, so more of the panel fits on a laptop screen.</td>
+<td width="50%"><b>A switch per subsection.</b> You can mute White Balance without turning off all of Color.</td>
+</tr>
+<tr>
+<td><img src=".github/assets/compact-sliders.jpg" alt="Label, track and value on a single row"></td>
+<td><img src=".github/assets/disable-subsection.jpg" alt="Eye toggle disabling the White Balance subsection"></td>
+</tr>
+</table>
 
 ## Read this before opening old edits
 
