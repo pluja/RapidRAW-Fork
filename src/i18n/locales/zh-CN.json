@@ -1948,7 +1948,7 @@
       "unsupportedFormat": "检测到不支持的文件格式：.{{ext}}"
     },
     "slider": {
-      "clickToEdit": "点击编辑",
+      "clickToEdit": "点击输入，拖动微调",
       "reset": "重置"
     },
     "waveform": {

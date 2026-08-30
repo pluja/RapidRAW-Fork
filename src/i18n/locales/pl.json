@@ -2020,7 +2020,7 @@
       "unsupportedFormat": "Wykryto nieobsługiwany format pliku: .{{ext}}"
     },
     "slider": {
-      "clickToEdit": "Kliknij, aby edytować",
+      "clickToEdit": "Kliknij, aby wpisać, przeciągnij, aby dostroić",
       "reset": "Resetuj"
     },
     "waveform": {

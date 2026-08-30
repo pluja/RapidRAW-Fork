@@ -1984,7 +1984,7 @@
       "unsupportedFormat": "Format(s) de fichier non pris en charge détecté(s) : .{{ext}}"
     },
     "slider": {
-      "clickToEdit": "Cliquer pour modifier",
+      "clickToEdit": "Cliquer pour saisir, glisser pour affiner",
       "reset": "Réinitialiser"
     },
     "waveform": {

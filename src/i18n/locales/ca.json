@@ -1950,7 +1950,7 @@
       "unsupportedFormat": "S'ha(n) detectat format(s) de fitxer no compatible(s): .{{ext}}"
     },
     "slider": {
-      "clickToEdit": "Feu clic per editar",
+      "clickToEdit": "Clic per escriure, arrossega per ajustar",
       "reset": "Restablir"
     },
     "waveform": {

@@ -1948,7 +1948,7 @@
       "unsupportedFormat": "未対応のファイル形式が検出されました: .{{ext}}"
     },
     "slider": {
-      "clickToEdit": "クリックして編集",
+      "clickToEdit": "クリックで入力、ドラッグで微調整",
       "reset": "リセット"
     },
     "waveform": {

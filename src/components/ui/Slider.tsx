@@ -29,19 +29,21 @@ interface SliderProps {
 const DOUBLE_CLICK_THRESHOLD_MS = 150;
 const FINE_ADJUSTMENT_MULTIPLIER = 0.2;
 
-// Pointer travel that crosses the whole range, in pixels. Deliberately not a
-// multiple of the track: tying it to the track made sensitivity follow panel
-// width, so narrowing a row to fit a label beside it would undo the feel.
+// The thumb follows the pointer, so one track width crosses the range, as it
+// does in Lightroom and Capture One. Any longer travel puts the maximum past
+// the screen edge, because these panels sit against it: at the 650px this used
+// to ask for, a 154px track needed 325px of rightward room and had 145px.
 //
-// This was twice as far until the rows became a single line. The hand movement
-// was unchanged, but the thumb then had a third of the track to cross, so it
-// crawled and the slider read as stuck.
-const FULL_RANGE_TRAVEL_PX = 650;
+// Sensitivity therefore follows panel width. Both references accept that, and
+// widening the panel is the remedy each of them documents.
+const THUMB_GRAB_RADIUS_PX = 10;
 
-// Dragging away from the slider vertically refines it, the way scrubby controls
-// in compositing apps do. Continuous, and needs no modifier held.
-const PRECISION_FALLOFF_PX = 140;
-const MIN_PRECISION = 0.08;
+// Dragging the readout scrubs at a finer gearing. Lightroom carries precision
+// on this second surface rather than on a modifier, and it is the method its
+// documentation and tutorials point to.
+const VALUE_SCRUB_MULTIPLIER = 0.25;
+const VALUE_SCRUB_THRESHOLD_PX = 3;
+
 const TOUCH_DRAG_THRESHOLD_PX = 10;
 const TOUCH_THUMB_HIT_RADIUS_PX = 24;
 
@@ -80,8 +82,11 @@ const Slider = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const lastUpTime = useRef(0);
   const lastPointerXRef = useRef<number>(0);
-  const dragOriginYRef = useRef<number | null>(null);
   const accumulatedValueRef = useRef<number>(0);
+  const dragGeometryRef = useRef({ left: 0, width: 1, grabOffset: 0 });
+  const fineAnchorRef = useRef<{ x: number; value: number } | null>(null);
+  const suppressValueClickRef = useRef(false);
+  const [isScrubbingValue, setIsScrubbingValue] = useState(false);
   const pendingTouchRef = useRef<{
     startX: number;
     startY: number;
@@ -100,7 +105,8 @@ const Slider = ({
     };
   }, []);
 
-  const thumbValue = isDragging ? smoothValue : displayValue;
+  const isInteracting = isDragging || isScrubbingValue;
+  const thumbValue = isInteracting ? smoothValue : displayValue;
   const fillPercentage = max !== min ? ((thumbValue - min) / (max - min)) * 100 : 0;
   const originPercentage = useMemo(() => {
     if (fillOrigin === 'min') {
@@ -133,8 +139,8 @@ const Slider = ({
   onDragStateChangeRef.current = onDragStateChange;
 
   useEffect(() => {
-    onDragStateChangeRef.current(isDragging);
-  }, [isDragging]);
+    onDragStateChangeRef.current(isInteracting);
+  }, [isInteracting]);
 
   useEffect(() => {
     if (!disabled) return;
@@ -208,53 +214,45 @@ const Slider = ({
   useEffect(() => {
     if (!isDragging || disabled) return;
 
-    const inputEl = rangeInputRef.current;
-    if (!inputEl) return;
-    const sliderWidth = inputEl.getBoundingClientRect().width || 1;
-
     const handlePointerMove = (e: MouseEvent | TouchEvent) => {
       let clientX: number;
-      let clientY: number;
       let shiftKey: boolean;
-      let isTouch: boolean;
 
       if ('touches' in e) {
         if (e.touches.length === 0) return;
         clientX = e.touches[0].clientX;
-        clientY = e.touches[0].clientY;
         shiftKey = hasFineAdjustmentModifier(e);
-        isTouch = true;
         if (e.cancelable) e.preventDefault();
       } else {
         clientX = (e as MouseEvent).clientX;
-        clientY = (e as MouseEvent).clientY;
         shiftKey = hasFineAdjustmentModifier(e);
-        isTouch = false;
       }
 
-      const deltaX = clientX - lastPointerXRef.current;
       const { min: curMin, max: curMax } = rangeRef.current;
+      const range = curMax - curMin;
+      const geometry = dragGeometryRef.current;
+      const thumbXOf = (val: number) =>
+        geometry.left + (range !== 0 ? Math.max(0, Math.min(1, (val - curMin) / range)) : 0) * geometry.width;
 
-      // A finger drifts vertically on its own, so only the pointer earns the
-      // scrubby refinement; touch relies on the travel ratio alone.
-      let precision = 1;
-      if (!isTouch && dragOriginYRef.current !== null) {
-        const verticalDistance = Math.abs(clientY - dragOriginYRef.current);
-        precision = Math.max(MIN_PRECISION, 1 / (1 + verticalDistance / PRECISION_FALLOFF_PX));
-      }
-
-      const multiplier = (shiftKey ? FINE_ADJUSTMENT_MULTIPLIER : 1) * precision;
-      const deltaValue = (deltaX / FULL_RANGE_TRAVEL_PX) * (curMax - curMin) * multiplier;
-
-      const prevAccumulated = accumulatedValueRef.current;
-      accumulatedValueRef.current = Math.max(curMin, Math.min(curMax, prevAccumulated + deltaValue));
-
-      const actualDeltaValue = accumulatedValueRef.current - prevAccumulated;
-      if (deltaValue !== 0) {
-        lastPointerXRef.current += deltaX * (actualDeltaValue / deltaValue);
+      let rawValue: number;
+      if (shiftKey) {
+        if (!fineAnchorRef.current) {
+          fineAnchorRef.current = { x: clientX, value: accumulatedValueRef.current };
+        }
+        const anchor = fineAnchorRef.current;
+        rawValue = anchor.value + ((clientX - anchor.x) / geometry.width) * range * FINE_ADJUSTMENT_MULTIPLIER;
       } else {
-        lastPointerXRef.current = clientX;
+        if (fineAnchorRef.current) {
+          // Re-seat the grab on release so the thumb stays under the pointer
+          // instead of snapping to wherever the unmodified mapping would put it.
+          geometry.grabOffset = clientX - thumbXOf(accumulatedValueRef.current);
+          fineAnchorRef.current = null;
+        }
+        rawValue = curMin + ((clientX - geometry.grabOffset - geometry.left) / geometry.width) * range;
       }
+
+      accumulatedValueRef.current = Math.max(curMin, Math.min(curMax, rawValue));
+      lastPointerXRef.current = clientX;
 
       const snappedValue = snapToStepRef.current(accumulatedValueRef.current);
 
@@ -264,7 +262,7 @@ const Slider = ({
     };
 
     const handlePointerUp = () => {
-      dragOriginYRef.current = null;
+      fineAnchorRef.current = null;
       lastUpTime.current = Date.now();
       pendingTouchRef.current = null;
       suppressTouchChangeRef.current = false;
@@ -290,7 +288,7 @@ const Slider = ({
   }, [disabled, isDragging]);
 
   useEffect(() => {
-    if (isDragging) {
+    if (isInteracting) {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
@@ -337,7 +335,7 @@ const Slider = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [value, isDragging]);
+  }, [value, isInteracting]);
 
   useEffect(() => {
     if (!isEditing) {
@@ -386,18 +384,30 @@ const Slider = ({
     e.preventDefault();
 
     const rect = e.currentTarget.getBoundingClientRect();
-    const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const rawValue = min + fraction * (max - min);
-    const snappedValue = snapToStep(rawValue);
+    const width = rect.width || 1;
+    const range = max - min;
+    const thumbX = rect.left + (range !== 0 ? Math.max(0, Math.min(1, (displayValue - min) / range)) : 0) * width;
 
+    // Landing on the thumb picks it up where it sits; landing anywhere else on
+    // the track jumps to that point, which is what both references do.
+    const grabbedThumb = Math.abs(e.clientX - thumbX) <= THUMB_GRAB_RADIUS_PX;
+    const rawValue = grabbedThumb
+      ? displayValue
+      : min + Math.max(0, Math.min(1, (e.clientX - rect.left) / width)) * range;
+
+    dragGeometryRef.current = { left: rect.left, width, grabOffset: grabbedThumb ? e.clientX - thumbX : 0 };
+    fineAnchorRef.current = null;
     accumulatedValueRef.current = rawValue;
     lastPointerXRef.current = e.clientX;
-    dragOriginYRef.current = e.clientY;
+
+    const snappedValue = snapToStep(rawValue);
 
     setIsDragging(true);
     setDisplayValue(snappedValue);
     setSmoothValue(snappedValue);
-    onChange({ target: { value: snappedValue } });
+    if (snappedValue !== displayValue) {
+      onChange({ target: { value: snappedValue } });
+    }
   };
 
   const handleTouchStart = (e: React.TouchEvent<HTMLInputElement>) => {
@@ -419,6 +429,9 @@ const Slider = ({
       pendingTouchRef.current = null;
       return;
     }
+
+    dragGeometryRef.current = { left: rect.left, width: rect.width || 1, grabOffset: touch.clientX - thumbX };
+    fineAnchorRef.current = null;
 
     pendingTouchRef.current = {
       startX: touch.clientX,
@@ -479,7 +492,59 @@ const Slider = ({
   const handleValueClick = () => {
     if (disabled) return;
 
+    if (suppressValueClickRef.current) {
+      suppressValueClickRef.current = false;
+      return;
+    }
     setIsEditing(true);
+  };
+
+  const handleValueMouseDown = (e: React.MouseEvent<HTMLSpanElement>) => {
+    if (disabled || e.button !== 0) return;
+
+    const inputEl = rangeInputRef.current;
+    if (!inputEl) return;
+
+    const width = inputEl.getBoundingClientRect().width || 1;
+    const startX = e.clientX;
+    const startValue = displayValue;
+    let scrubbing = false;
+
+    const onMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      if (!scrubbing) {
+        if (Math.abs(deltaX) < VALUE_SCRUB_THRESHOLD_PX) return;
+        scrubbing = true;
+        setIsScrubbingValue(true);
+      }
+
+      const { min: curMin, max: curMax } = rangeRef.current;
+      const gearing = VALUE_SCRUB_MULTIPLIER * (hasFineAdjustmentModifier(moveEvent) ? FINE_ADJUSTMENT_MULTIPLIER : 1);
+      const rawValue = startValue + (deltaX / width) * (curMax - curMin) * gearing;
+      const clamped = Math.max(curMin, Math.min(curMax, rawValue));
+
+      accumulatedValueRef.current = clamped;
+      const snappedValue = snapToStepRef.current(clamped);
+
+      setSmoothValue(clamped);
+      setDisplayValue(snappedValue);
+      onChangeRef.current({ target: { value: snappedValue } });
+    };
+
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      if (!scrubbing) return;
+
+      // The click that follows a scrub would otherwise open the text field.
+      suppressValueClickRef.current = true;
+      lastUpTime.current = Date.now();
+      setIsScrubbingValue(false);
+      onPointerUp?.();
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -648,8 +713,11 @@ const Slider = ({
           />
         ) : (
           <span
-            className={`text-sm text-text-primary w-full text-right select-none tabular-nums ${disabled ? '' : 'cursor-text'}`}
+            className={`text-sm text-text-primary w-full text-right select-none tabular-nums ${
+              disabled ? '' : 'cursor-ew-resize'
+            }`}
             onClick={disabled ? undefined : handleValueClick}
+            onMouseDown={disabled ? undefined : handleValueMouseDown}
             onDoubleClick={disabled ? undefined : handleReset}
             data-tooltip={disabled ? undefined : t('ui.slider.clickToEdit')}
           >

@@ -1948,7 +1948,7 @@
       "unsupportedFormat": "지원되지 않는 파일 형식이 감지되었습니다: .{{ext}}"
     },
     "slider": {
-      "clickToEdit": "클릭하여 편집",
+      "clickToEdit": "클릭하여 입력, 드래그하여 미세 조정",
       "reset": "초기화"
     },
     "waveform": {

@@ -1950,7 +1950,7 @@
       "unsupportedFormat": "Nicht unterstützte Dateiformate erkannt: .{{ext}}"
     },
     "slider": {
-      "clickToEdit": "Zum Bearbeiten klicken",
+      "clickToEdit": "Klicken zum Eingeben, ziehen zum Feinabstimmen",
       "reset": "Zurücksetzen"
     },
     "waveform": {

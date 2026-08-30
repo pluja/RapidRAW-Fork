@@ -1984,7 +1984,7 @@
       "unsupportedFormat": "Formato(s) de archivo no compatible(s) detectado(s): .{{ext}}"
     },
     "slider": {
-      "clickToEdit": "Haz clic para editar",
+      "clickToEdit": "Clic para escribir, arrastra para ajustar",
       "reset": "Restablecer"
     },
     "waveform": {

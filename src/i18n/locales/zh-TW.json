@@ -1948,7 +1948,7 @@
       "unsupportedFormat": "檢測到不支援的檔案格式：.{{ext}}"
     },
     "slider": {
-      "clickToEdit": "點選編輯",
+      "clickToEdit": "點擊輸入，拖曳微調",
       "reset": "重置"
     },
     "waveform": {
