@@ -414,14 +414,28 @@ fn value_noise(p: vec2<f32>) -> f32 {
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y) * 2.0 - 1.0;
 }
 
+/// How fast an octave fades once its cells drop under a pixel.
+///
+/// Measured rather than chosen: grain.rs renders a frame at export scale, box
+/// downsamples it to preview size and compares that against the preview render,
+/// across sizes and roughness. This exponent is the one that brings the two
+/// within a few percent, and a test holds it there.
+const GRAIN_OCTAVE_FALLOFF: f32 = 0.9;
+
 /// Weight for an octave whose cells span this many pixels.
 ///
-/// Under about two pixels a cell cannot be resolved: the octave stops being
-/// grain structure and becomes per-pixel noise, which crawls as the preview
-/// resolution changes. Fading it out keeps the texture the same shape at every
-/// zoom, which is the point of a resolution-independent grain model.
+/// A pixel smaller than a cell sees one cell and keeps the octave whole. A pixel
+/// larger than a cell averages roughly 1 / cell_pixels of them, and averaging
+/// spreads out, so only part survives. Grain softening as a print is made
+/// smaller is the same effect.
+///
+/// This used to be smoothstep(1.0, 2.5, cell_pixels), which is a cliff rather
+/// than a falloff: every octave under a pixel weighed nothing and none reached
+/// full weight until two and a half. A preview at the default size drew eight
+/// percent of the grain the export received, and the lower half of the size
+/// slider drew none at all, so the slider could not be set by looking.
 fn grain_octave_weight(cell_pixels: f32) -> f32 {
-    return smoothstep(1.0, 2.5, cell_pixels);
+    return pow(clamp(cell_pixels, 0.0, 1.0), GRAIN_OCTAVE_FALLOFF);
 }
 
 /// Grain crystals scatter as a Poisson process and are then filtered by the
