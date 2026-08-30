@@ -225,6 +225,32 @@ const WB_ORIGIN_CCT: f32 = 5003.0;
 const WB_MIREDS_PER_STEP: f32 = 37.5;
 const WB_TINT_V_PER_STEP: f32 = 0.03;
 
+/// Smallest Z the target illuminant may have.
+///
+/// The tint offset moves v with no regard for where the visible gamut ends. Past
+/// x + y = 1 the target's Z turns negative, its Bradford blue cone crosses zero,
+/// and the gain divided through it passes a pole and comes back negated: the
+/// image goes violently blue and then inverts in that channel. A warm target
+/// with a green cast pulled out of it reaches that corner on the ordinary
+/// sliders, so the target is held to a floor on Z instead. Tint saturates there
+/// rather than exploding, which is honest, since no greener light exists at that
+/// chromaticity.
+const WB_TARGET_MIN_Z: f32 = 0.05;
+
+fn wb_clamp_target_to_gamut(untinted: vec2<f32>, tinted: vec2<f32>) -> vec2<f32> {
+    let z_tinted = 1.0 - tinted.x - tinted.y;
+    if (z_tinted >= WB_TARGET_MIN_Z) {
+        return tinted;
+    }
+    let z_untinted = 1.0 - untinted.x - untinted.y;
+    let span = z_tinted - z_untinted;
+    if (abs(span) < 1e-9) {
+        return untinted;
+    }
+    // Z is affine along the segment, so the crossing is exact.
+    return mix(untinted, tinted, clamp((WB_TARGET_MIN_Z - z_untinted) / span, 0.0, 1.0));
+}
+
 const PP_TO_CONE = mat3x3<f32>(
     vec3<f32>(0.7907327, -0.1048588, 0.0112988),
     vec3<f32>(0.3106534, 1.1183755, -0.0435044),
@@ -768,10 +794,11 @@ fn apply_white_balance(color: vec3<f32>, temp: f32, tnt: f32) -> vec3<f32> {
         1000.0
     );
     let target_uv = wb_uv_from_xy(wb_xy_from_cct(1.0e6 / target_mireds));
-    let tinted_xy = wb_xy_from_uv(vec2<f32>(
-        target_uv.x,
-        target_uv.y + tnt * WB_TINT_V_PER_STEP
-    ));
+    let untinted_xy = wb_xy_from_uv(target_uv);
+    let tinted_xy = wb_clamp_target_to_gamut(
+        untinted_xy,
+        wb_xy_from_uv(vec2<f32>(target_uv.x, target_uv.y + tnt * WB_TINT_V_PER_STEP))
+    );
 
     let origin_cone = BRADFORD * wb_xyz_from_xy(origin_xy);
     let target_cone = BRADFORD * wb_xyz_from_xy(tinted_xy);

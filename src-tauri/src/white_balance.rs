@@ -27,6 +27,38 @@ pub const ORIGIN_CCT: f32 = 5003.0;
 /// locus along which green and magenta lie.
 pub const TINT_V_PER_STEP: f32 = 0.0003;
 
+/// Smallest Z the target illuminant may have.
+///
+/// The tint offset moves v with no regard for where the visible gamut ends. Past
+/// x + y = 1 the target's Z turns negative, its Bradford blue cone crosses zero,
+/// and the gain divided through it passes a pole and comes back negated. A warm
+/// target with a green cast pulled out of it reaches that corner on the ordinary
+/// sliders, so the target is held to a floor on Z instead. Tint saturates there
+/// rather than exploding, since no greener light exists at that chromaticity.
+///
+/// Mirrors WB_TARGET_MIN_Z in shaders/shader.wgsl, which the tests pin against
+/// the shader source rather than against a copy of it.
+pub const TARGET_MIN_Z: f32 = 0.05;
+
+/// Pulls a tinted target back to the visible gamut along the segment from the
+/// untinted one. Z is affine along that segment, so the crossing is exact.
+pub fn clamp_target_to_gamut(untinted: (f32, f32), tinted: (f32, f32)) -> (f32, f32) {
+    let z_tinted = 1.0 - tinted.0 - tinted.1;
+    if z_tinted >= TARGET_MIN_Z {
+        return tinted;
+    }
+    let z_untinted = 1.0 - untinted.0 - untinted.1;
+    let span = z_tinted - z_untinted;
+    if span.abs() < 1e-9 {
+        return untinted;
+    }
+    let t = ((TARGET_MIN_Z - z_untinted) / span).clamp(0.0, 1.0);
+    (
+        untinted.0 + t * (tinted.0 - untinted.0),
+        untinted.1 + t * (tinted.1 - untinted.1),
+    )
+}
+
 pub fn xyz_from_xy(x: f32, y: f32) -> [f32; 3] {
     if y.abs() < 1e-6 {
         return [0.0, 0.0, 0.0];
@@ -145,7 +177,10 @@ pub fn target_white_xyz(as_shot_cct: f32, temperature: f32, tint: f32) -> [f32; 
     let (u, v) = uv_from_xy(x, y);
     // Green lies at higher v, and the target illuminant is divided out, so a
     // greener target is what leaves the image magenta.
-    let (tx, ty) = xy_from_uv(u, v + tint * TINT_V_PER_STEP);
+    let (tx, ty) = clamp_target_to_gamut(
+        xy_from_uv(u, v),
+        xy_from_uv(u, v + tint * TINT_V_PER_STEP),
+    );
     xyz_from_xy(tx, ty)
 }
 
@@ -362,6 +397,27 @@ mod tests {
     /// Reproduces exactly what apply_white_balance does in shader.wgsl, so the
     /// two implementations cannot drift apart unnoticed. Takes slider units and
     /// scales them the way the adjustment plumbing does.
+    /// Reads a `const NAME: f32 = VALUE;` out of the shader source itself.
+    ///
+    /// Constants asserted against another Rust literal prove nothing about what
+    /// runs on the GPU: the shader is the live path, and a mirror that has
+    /// drifted from it passes every such test. These read the shader.
+    fn shader_f32_const(name: &str) -> f32 {
+        let needle = format!("const {name}: f32 =");
+        let line = shader_source()
+            .lines()
+            .find(|l| l.trim_start().starts_with(&needle))
+            .unwrap_or_else(|| panic!("shaders/shader.wgsl has no `const {name}: f32`"));
+        line.rsplit('=')
+            .next()
+            .and_then(|rhs| rhs.trim().trim_end_matches(';').parse::<f32>().ok())
+            .unwrap_or_else(|| panic!("could not read a value for {name} from {line:?}"))
+    }
+
+    fn shader_source() -> &'static str {
+        include_str!("shaders/shader.wgsl")
+    }
+
     fn shader_white_balance(color: [f32; 3], slider_temp: f32, slider_tint: f32) -> [f32; 3] {
         let temp = slider_temp / TEMPERATURE_SCALE;
         let tint = slider_tint / TINT_SCALE;
@@ -371,7 +427,10 @@ mod tests {
             (1.0e6 / ORIGIN_CCT - temp * SHADER_MIREDS_PER_STEP).clamp(20.0, 1000.0);
         let (tx, ty) = xy_from_cct(1.0e6 / target_mireds);
         let (tu, tv) = uv_from_xy(tx, ty);
-        let (fx, fy) = xy_from_uv(tu, tv + tint * SHADER_TINT_V_PER_STEP);
+        let (fx, fy) = clamp_target_to_gamut(
+            xy_from_uv(tu, tv),
+            xy_from_uv(tu, tv + tint * SHADER_TINT_V_PER_STEP),
+        );
 
         let origin_cone = color_space::apply(&BRADFORD, xyz_from_xy(ox, oy));
         let target_cone = color_space::apply(&BRADFORD, xyz_from_xy(fx, fy));
@@ -389,6 +448,116 @@ mod tests {
             cone[2] * origin_cone[2] / target_cone[2],
         ];
         color_space::apply(&cone_to_pp, scaled)
+    }
+
+    #[test]
+    fn the_shader_carries_the_gamut_floor_this_module_was_tuned_against() {
+        let shader = shader_f32_const("WB_TARGET_MIN_Z");
+        assert!(
+            (shader - TARGET_MIN_Z).abs() < 1e-9,
+            "shader WB_TARGET_MIN_Z is {shader}, this module uses {TARGET_MIN_Z}"
+        );
+    }
+
+    #[test]
+    fn the_shader_white_balance_constants_match_this_module() {
+        for (name, expected) in [
+            ("WB_ORIGIN_CCT", ORIGIN_CCT),
+            ("WB_MIREDS_PER_STEP", MIREDS_PER_STEP * TEMPERATURE_SCALE),
+            ("WB_TINT_V_PER_STEP", TINT_V_PER_STEP * TINT_SCALE),
+        ] {
+            let shader = shader_f32_const(name);
+            assert!(
+                (shader - expected).abs() <= expected.abs() * 1e-6,
+                "shader {name} is {shader}, this module implies {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_shader_applies_the_clamp_rather_than_merely_defining_it() {
+        let src = shader_source();
+        let body = src
+            .split("fn apply_white_balance")
+            .nth(1)
+            .expect("shader has no apply_white_balance");
+        let body = &body[..body.find("\n}").unwrap_or(body.len())];
+        assert!(
+            body.contains("wb_clamp_target_to_gamut"),
+            "apply_white_balance does not call wb_clamp_target_to_gamut, so the \
+             target can leave the visible gamut again"
+        );
+    }
+
+    #[test]
+    fn no_slider_position_can_invert_or_explode_a_channel() {
+        // The pole this guards sat at temperature -100, tint +77: the target left
+        // the gamut, its blue cone crossed zero, and the gain through it came back
+        // negative. Sweeping every position is cheap, and the corner is easy to
+        // miss by sampling.
+        let grey = [0.18, 0.18, 0.18];
+        let mut worst = 0.0f32;
+        let mut worst_at = (0.0f32, 0.0f32);
+
+        for ti in -100..=100 {
+            for tn in -100..=100 {
+                let (temp, tint) = (ti as f32, tn as f32);
+                let out = shader_white_balance(grey, temp, tint);
+                for (i, v) in out.iter().enumerate() {
+                    assert!(
+                        v.is_finite(),
+                        "channel {i} was {v} at temperature {temp}, tint {tint}"
+                    );
+                    assert!(
+                        *v > 0.0,
+                        "channel {i} went to {v} at temperature {temp}, tint {tint}: \
+                         a positive grey cannot balance to a negative channel"
+                    );
+                }
+                let gain = out.iter().fold(0.0f32, |m, v| m.max(v / 0.18));
+                if gain > worst {
+                    worst = gain;
+                    worst_at = (temp, tint);
+                }
+            }
+        }
+
+        assert!(
+            worst < 20.0,
+            "largest channel gain was {worst} at temperature {}, tint {}; the \
+             gamut floor is meant to hold this near 11",
+            worst_at.0,
+            worst_at.1
+        );
+    }
+
+    #[test]
+    fn the_clamp_leaves_ordinary_edits_untouched() {
+        // It may only bite in the corner it was added for. Anywhere else it would
+        // be silently changing colour that was already correct.
+        for (temp, tint) in [
+            (0.0, 0.0),
+            (-20.0, 20.0),
+            (-40.0, 30.0),
+            (20.0, -20.0),
+            (-60.0, 50.0),
+            (100.0, 100.0),
+            (-100.0, 0.0),
+            (-100.0, -100.0),
+        ] {
+            let t: f32 = temp / TEMPERATURE_SCALE;
+            let tn: f32 = tint / TINT_SCALE;
+            let mireds = (1.0e6 / ORIGIN_CCT - t * SHADER_MIREDS_PER_STEP).clamp(20.0, 1000.0);
+            let (x, y) = xy_from_cct(1.0e6 / mireds);
+            let (u, v) = uv_from_xy(x, y);
+            let untinted = xy_from_uv(u, v);
+            let tinted = xy_from_uv(u, v + tn * SHADER_TINT_V_PER_STEP);
+            let clamped = clamp_target_to_gamut(untinted, tinted);
+            assert!(
+                (clamped.0 - tinted.0).abs() < 1e-7 && (clamped.1 - tinted.1).abs() < 1e-7,
+                "temperature {temp}, tint {tint} was clamped from {tinted:?} to {clamped:?}"
+            );
+        }
     }
 
     #[test]
