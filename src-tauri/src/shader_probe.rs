@@ -271,4 +271,27 @@ fn shaped(x: f32) -> f32 {
     fn a_missing_constant_is_loud() {
         f32_const("NOT_A_REAL_CONSTANT");
     }
+
+    /// The shader is otherwise only compiled when a pipeline is built, which
+    /// needs a GPU, so a syntax or type error reaches a user's machine rather
+    /// than a test run.
+    #[test]
+    fn every_shader_compiles() {
+        for (name, src) in [
+            ("shader.wgsl", source()),
+            ("blur.wgsl", include_str!("shaders/blur.wgsl")),
+            ("display.wgsl", include_str!("shaders/display.wgsl")),
+            ("flare.wgsl", include_str!("shaders/flare.wgsl")),
+        ] {
+            let module = wgpu::naga::front::wgsl::parse_str(src)
+                .unwrap_or_else(|e| panic!("{name} does not parse:\n{}", e.emit_to_string(src)));
+
+            wgpu::naga::valid::Validator::new(
+                wgpu::naga::valid::ValidationFlags::all(),
+                wgpu::naga::valid::Capabilities::all(),
+            )
+            .validate(&module)
+            .unwrap_or_else(|e| panic!("{name} does not validate: {e:?}"));
+        }
+    }
 }

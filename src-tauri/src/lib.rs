@@ -42,6 +42,7 @@ mod preset_converter;
 mod raw_processing;
 #[cfg(test)]
 mod shader_probe;
+mod sharpen;
 mod tagging;
 mod tagging_utils;
 mod white_balance;

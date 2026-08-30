@@ -1214,7 +1214,8 @@ fn apply_sharpen(
     threshold: f32,
     masking: f32,
     mask_preview: f32,
-    is_raw: u32
+    is_raw: u32,
+    scale: f32
 ) -> SharpenOutput {
     // The mask describes where sharpening would be held back, which the edges in
     // the image decide rather than the amount. The preview therefore has to walk
@@ -1296,7 +1297,15 @@ fn apply_sharpen(
     // Masking holds sharpening back where there is no structure, so noise in a
     // sky or the smooth part of skin is left alone. At zero it does nothing, so
     // an image edited before this existed renders as it did.
-    let edge = sqrt(gx_wide * gx_wide + gy_wide * gy_wide) / 9.0;
+    //
+    // The gradient is measured over a window fixed in pixels, so the same edge
+    // in the picture reads weaker the more pixels it is spread across: an
+    // export at three times the preview's resolution measured a third of the
+    // slope and called the edge flat. Multiplying by scale expresses it per
+    // fraction of the frame instead, which is what lets the knees below mean
+    // the same thing at any render size and the mask preview show what the
+    // export will get. sharpen.rs measures the agreement.
+    let edge = sqrt(gx_wide * gx_wide + gy_wide * gy_wide) / 9.0 * scale;
     var mask = 1.0;
     if (masking > 0.001) {
         let knee = mix(SHARPEN_MASK_KNEE_LOW, SHARPEN_MASK_KNEE_HIGH, masking);
@@ -2174,7 +2183,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         sharpness_blurred, tonal_blurred,
         absolute_coord_i, t_sharpness, t_sharp_thresh,
         adjustments.global.sharpen_masking,
-        adjustments.global.sharpen_mask_preview, is_raw
+        adjustments.global.sharpen_mask_preview, is_raw, scale
     );
     locally_contrasted_rgb = sharpened.color;
 
