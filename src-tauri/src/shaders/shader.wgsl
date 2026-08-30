@@ -1829,33 +1829,31 @@ fn apply_all_curves(color: vec3<f32>, luma_curve: array<Point, 16>, luma_curve_c
     let blue_is_default = is_default_curve(blue_curve, blue_curve_count);
     let rgb_curves_are_active = !red_is_default || !green_is_default || !blue_is_default;
 
+    // The luma curve shapes tone across all three channels, then the per
+    // channel curves grade the result, which is what the Tone Curve panel does
+    // in Lightroom and Capture One.
+    //
+    // This used to hold luminance to the luma curve's target whenever any RGB
+    // curve was off default, and apply the luma curve per channel otherwise. So
+    // the luma curve meant two different things, and moving a single red point
+    // silently changed what it did to the whole image. Holding luminance also
+    // meant an RGB curve could only tint: lifting shadows with the blue curve
+    // left them exactly as dark, which is half of what curves are used for.
+    var curved = vec3<f32>(
+        apply_curve(color.r, luma_curve, luma_curve_count),
+        apply_curve(color.g, luma_curve, luma_curve_count),
+        apply_curve(color.b, luma_curve, luma_curve_count)
+    );
+
     if (rgb_curves_are_active) {
-        let color_graded = vec3<f32>(
-            apply_curve(color.r, red_curve, red_curve_count),
-            apply_curve(color.g, green_curve, green_curve_count),
-            apply_curve(color.b, blue_curve, blue_curve_count)
+        curved = vec3<f32>(
+            apply_curve(curved.r, red_curve, red_curve_count),
+            apply_curve(curved.g, green_curve, green_curve_count),
+            apply_curve(curved.b, blue_curve, blue_curve_count)
         );
-        let luma_initial = get_display_luma(color);
-        let luma_target = apply_curve(luma_initial, luma_curve, luma_curve_count);
-        let luma_graded = get_display_luma(color_graded);
-
-        let d = luma_target - luma_graded;
-        var final_color = color_graded + vec3<f32>(d);
-
-        let c_min = min(final_color.r, min(final_color.g, final_color.b));
-        if (c_min < 0.0) {
-            final_color = vec3<f32>(luma_target) + ((final_color - vec3<f32>(luma_target)) * luma_target) / max(luma_target - c_min, 1e-6);
-        }
-
-        let c_max = max(final_color.r, max(final_color.g, final_color.b));
-        if (c_max > 1.0) {
-            final_color = vec3<f32>(luma_target) + ((final_color - vec3<f32>(luma_target)) * (1.0 - luma_target)) / max(c_max - luma_target, 1e-6);
-        }
-
-        return clamp(final_color, vec3<f32>(0.0), vec3<f32>(1.0));
-    } else {
-        return vec3<f32>(apply_curve(color.r, luma_curve, luma_curve_count), apply_curve(color.g, luma_curve, luma_curve_count), apply_curve(color.b, luma_curve, luma_curve_count));
     }
+
+    return curved;
 }
 
 fn get_mask_influence(mask_index: u32, coords: vec2<u32>) -> f32 {
