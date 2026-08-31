@@ -19,6 +19,13 @@
 
 # RapidRAW-Fork
 
+> [!WARNING]
+> **This is an experimental fork, built for my own use.** I change things to suit my own photos and my own workflow, and I test it on those. It is not a product: there are no releases, no support, and no promise that anything still works between one commit and the next.
+>
+> **If you want a RAW editor to actually use, go to [RapidRAW](https://github.com/CyberTimon/RapidRAW).** That is the real project, it is maintained, and it is where the work belongs. Nearly everything here is CyberTimon's; I have only changed color.
+>
+> I do this for fun, and I write the code with AI. I review and test what comes out of that. Decide for yourself what it is worth.
+
 A fork of [RapidRAW](https://github.com/CyberTimon/RapidRAW) by CyberTimon. I keep it in sync with upstream. I change one thing: color.
 
 ## What is different
@@ -88,7 +95,7 @@ Colors look different here. Photos you edited in upstream RapidRAW will not matc
 
 ## Disclosure
 
-I wrote this code with AI. Each commit explains the measurement behind the change, and 68 tests cover the color maths. I reviewed and tested it. Decide for yourself what that is worth.
+I wrote this code with AI, and I reviewed and tested it. Each commit explains the measurement behind the change, and 109 tests cover the color maths, including assertions that the Rust and the shader agree on every constant they share.
 
 ## Upstream
 
